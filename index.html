@@ -1170,7 +1170,7 @@
           <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
         </div>
         <div class="welcome-feed-list" id="welcomeFeedList">
-          <div class="feed-empty">Loading community feed...</div>
+          <div class="feed-empty">Scanning the airwaves...</div>
         </div>
       </div>
     </div>
@@ -1186,7 +1186,7 @@
       </div>
     </div>
     <div class="feed-list" id="feedList">
-      <div class="feed-empty">Loading community pages...</div>
+      <div class="feed-empty">Scanning the airwaves...</div>
     </div>
   </div>
 </div>
@@ -1849,14 +1849,34 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
   goBtn.disabled = true;
   addressInput.value = query;
 
-  // Show loading
+  // Show loading with cycling immersive messages
+  const loadingMessages = [
+    'searching the records...',
+    'exploring a new path...',
+    'digging something up...',
+    'tracing a signal...',
+    'following a thread...',
+    'pulling from the archive...',
+    'navigating the deep net...',
+    'decoding the broadcast...',
+    'tuning into a frequency...',
+    'unearthing an artifact...',
+    'opening a sealed channel...',
+    'sifting through the noise...',
+  ];
+  const loadMsg = loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
   pageContainer.innerHTML = `
     <div class="loading-container">
       <div class="loading-spinner"></div>
-      <div class="loading-text">Connecting to the alternate internet...</div>
-      <div class="loading-step" id="loadingStep">Generating page content...</div>
+      <div class="loading-text" id="loadingText">${loadMsg}</div>
+      <div class="loading-step" id="loadingStep"></div>
     </div>
   `;
+  const loadingInterval = setInterval(() => {
+    const el = $('#loadingText');
+    if (!el) { clearInterval(loadingInterval); return; }
+    el.textContent = loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
+  }, 3000);
 
   // Determine storage URL (add suffix if duplicate)
   let storageUrl = query.toLowerCase();
@@ -1963,6 +1983,7 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     `;
   }
 
+  clearInterval(loadingInterval);
   state.isLoading = false;
   goBtn.disabled = false;
 }
@@ -2838,10 +2859,10 @@ refreshFeedBtn.addEventListener('click', () => loadFeed(true));
 async function loadWelcomeFeed() {
   if (!welcomeFeedList) return;
   if (!state.firebaseReady || !firebaseDb) {
-    welcomeFeedList.innerHTML = '<div class="feed-empty">Connecting to community feed...</div>';
+    welcomeFeedList.innerHTML = '<div class="feed-empty">Tuning in...</div>';
     return;
   }
-  welcomeFeedList.innerHTML = '<div class="feed-empty">Loading community feed...</div>';
+  welcomeFeedList.innerHTML = '<div class="feed-empty">Scanning the airwaves...</div>';
   try {
     const snap = await firebaseDb.ref('feed')
       .orderByChild('timestamp')
