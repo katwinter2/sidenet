@@ -1589,6 +1589,19 @@ resetPromptBtn.addEventListener('click', () => {
 // ── Navigation ──
 const welcomeHTML = pageContainer.innerHTML;
 
+// Browser URL integration — each page gets a unique hash URL
+function updateBrowserUrl(sidenetUrl) {
+  if (sidenetUrl) {
+    history.pushState({ sidenetUrl }, '', '#/' + sidenetUrl);
+  } else {
+    history.pushState({ sidenetUrl: null }, '', window.location.pathname);
+  }
+}
+
+function isOnPage() {
+  return window.location.hash.length > 2; // more than just "#/"
+}
+
 function goHome() {
   pageContainer.innerHTML = welcomeHTML;
   addressInput.value = '';
@@ -1597,12 +1610,46 @@ function goHome() {
   state.currentExplorationId = null;
   state.tonalModifier = null;
   updateNavButtons();
+  updateBrowserUrl(null);
   toggleFeed(false);
   state.feedClosedByUser = false;
   loadWelcomeFeed();
 }
 
 homeBtn.addEventListener('click', goHome);
+
+// Handle browser back/forward
+window.addEventListener('popstate', (e) => {
+  const popState = e.state;
+  if (!popState || !popState.sidenetUrl) {
+    // Going back to homepage
+    pageContainer.innerHTML = welcomeHTML;
+    addressInput.value = '';
+    state.currentFeedKey = null;
+    state.currentExplorationId = null;
+    state.tonalModifier = null;
+    toggleFeed(false);
+    state.feedClosedByUser = false;
+    loadWelcomeFeed();
+    // Sync with internal history
+    if (state.historyIndex > 0) state.historyIndex--;
+    updateNavButtons();
+  } else {
+    // Going to a page — find it in internal history
+    const url = popState.sidenetUrl;
+    addressInput.value = url;
+    // Try to find in internal history
+    const found = state.history.find(h => h.url === url);
+    if (found && found.html) {
+      pageContainer.innerHTML = found.html;
+      bindPageLinks();
+      if (!state.feedClosedByUser) toggleFeed(true);
+    } else {
+      navigateTo(url);
+    }
+    updateNavButtons();
+  }
+});
 
 addressInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !state.isLoading) {
@@ -1622,6 +1669,7 @@ backBtn.addEventListener('click', () => {
     pageContainer.innerHTML = entry.html;
     bindPageLinks();
     updateNavButtons();
+    updateBrowserUrl(entry.url);
   }
 });
 
@@ -1633,6 +1681,7 @@ forwardBtn.addEventListener('click', () => {
     pageContainer.innerHTML = entry.html;
     bindPageLinks();
     updateNavButtons();
+    updateBrowserUrl(entry.url);
   }
 });
 
@@ -1702,6 +1751,8 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
       updateNavButtons();
       state.currentFeedKey = existingEntry.key || null;
       state.currentExplorationId = existingEntry.explorationId || null;
+      updateBrowserUrl(existingEntry.url);
+      if (!state.feedClosedByUser) toggleFeed(true);
       $('#contentArea').scrollTop = 0;
       return;
     }
@@ -1762,6 +1813,7 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     state.history.push({ url: query, html: pageContainer.innerHTML });
     state.historyIndex = state.history.length - 1;
     updateNavButtons();
+    updateBrowserUrl(query);
 
     // Save to persistent history
     const pageTitle = extractTitle(pageContainer.innerHTML) || query;
@@ -2069,6 +2121,8 @@ function renderHistoryPanel() {
         state.history.push({ url: entry.url, html: entry.html });
         state.historyIndex = state.history.length - 1;
         updateNavButtons();
+        updateBrowserUrl(entry.url);
+        if (!state.feedClosedByUser) toggleFeed(true);
         $('#contentArea').scrollTop = 0;
       } else {
         // Re-generate if no cached HTML
@@ -2119,7 +2173,13 @@ function initFirebase() {
         state.firebaseUid = user.uid;
         state.firebaseReady = true;
         await loadSettingsFromFirebase();
-        loadWelcomeFeed();
+        // Check for hash-based URL on initial load
+        const hashUrl = window.location.hash.replace(/^#\/?/, '');
+        if (hashUrl) {
+          navigateTo(hashUrl);
+        } else {
+          loadWelcomeFeed();
+        }
       } else {
         firebaseAuth.signInAnonymously().catch((err) => {
           console.error('Anonymous auth failed:', err);
@@ -2390,6 +2450,7 @@ function renderFeed(entries) {
               .then(snap => { state.tonalModifier = snap.val() || null; })
               .catch(() => {});
           }
+          updateBrowserUrl(entry.url);
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
@@ -2508,6 +2569,8 @@ function renderWelcomeFeed(entries) {
               .then(snap => { state.tonalModifier = snap.val() || null; })
               .catch(() => {});
           }
+          updateBrowserUrl(entry.url);
+          if (!state.feedClosedByUser) toggleFeed(true);
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
@@ -2673,6 +2736,7 @@ async function loadFeedEntry(feedKey) {
       updateNavButtons();
       state.currentFeedKey = feedKey;
       state.currentExplorationId = entry.explorationId || null;
+      updateBrowserUrl(entry.url);
       $('#contentArea').scrollTop = 0;
     } else if (entry) {
       navigateTo(entry.url);
