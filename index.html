@@ -737,26 +737,63 @@
     display: block;
   }
 
-  /* Constellation overlay */
-  .constellation-wrapper {
-    position: fixed;
-    z-index: 95;
-    pointer-events: none;
+  /* Exploration scrubber */
+  .scrubber-bar {
+    position: relative;
+    height: 6px;
+    margin-top: 10px;
+    background: var(--border);
+    border-radius: 3px;
+    cursor: pointer;
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity 0.2s ease;
+  }
+  .feed-card:hover .scrubber-bar { opacity: 1; }
+
+  .scrubber-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: var(--accent); border-radius: 3px;
+    width: 0; transition: width 0.1s ease; pointer-events: none;
   }
 
-  .constellation-wrapper.visible {
-    opacity: 1;
+  .scrubber-dot {
+    position: absolute; top: 50%;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); border: 1.5px solid var(--surface);
+    transform: translate(-50%, -50%);
+    transition: transform 0.15s ease, background 0.15s ease;
+    pointer-events: none; z-index: 2;
+  }
+  .scrubber-dot.root { width: 10px; height: 10px; background: var(--accent-hover); }
+  .scrubber-dot.active {
+    transform: translate(-50%, -50%) scale(1.5);
+    background: var(--accent-hover);
+    box-shadow: 0 0 6px var(--accent-glow);
   }
 
-  .constellation-canvas {
-    display: block;
-    border-radius: 12px;
-    background: radial-gradient(ellipse at center, #1a1a2e 0%, #0d0d14 100%);
-    border: 1px solid var(--border);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  .scrubber-popup {
+    position: absolute; bottom: calc(100% + 10px); left: 0;
+    transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px;
+    min-width: 160px; max-width: 260px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    pointer-events: none; opacity: 0;
+    transition: opacity 0.15s ease; z-index: 10; font-size: 12px;
   }
+  .scrubber-popup.visible { opacity: 1; }
+  .scrubber-popup::after {
+    content: ''; position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: var(--border);
+  }
+
+  .scrubber-popup-title { font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scrubber-popup-url { font-size: 10px; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scrubber-popup-concepts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .scrubber-concept-tag { background: var(--bg); color: var(--text-dim); padding: 2px 6px; border-radius: 4px; font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scrubber-popup-diff { margin-top: 4px; font-size: 10px; color: var(--text-dim); }
+  .scrubber-popup-diff .diff-count { color: var(--green); font-weight: 500; }
 
   /* History panel */
   .history-panel {
@@ -1239,11 +1276,6 @@
       <button class="btn-primary" id="duplicateYes">Yes, take me there</button>
     </div>
   </div>
-</div>
-
-<!-- Constellation overlay -->
-<div class="constellation-wrapper" id="constellationWrapper">
-  <canvas class="constellation-canvas" id="constellationCanvas"></canvas>
 </div>
 
 <script>
@@ -2224,6 +2256,7 @@ function renderFeed(entries) {
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
           <span class="feed-card-model">${model}</span>
         </div>
+        <div class="scrubber-bar" style="display:none"></div>
       </div>`;
   }
 
@@ -2232,7 +2265,7 @@ function renderFeed(entries) {
   // Bind card clicks — load the shared page
   feedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', async () => {
-      hideConstellation();
+      hideScrubberPopup();
       const key = card.dataset.feedKey;
       try {
         const snap = await firebaseDb.ref('feed/' + key).once('value');
@@ -2259,7 +2292,7 @@ function renderFeed(entries) {
       toggleFeed(false);
     });
   });
-  bindConstellationHovers(feedList);
+  bindScrubbers(feedList);
 }
 
 function timeAgo(ts) {
@@ -2333,6 +2366,7 @@ function renderWelcomeFeed(entries) {
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
           <span class="feed-card-model">${model}</span>
         </div>
+        <div class="scrubber-bar" style="display:none"></div>
       </div>`;
   }
   welcomeFeedList.innerHTML = html;
@@ -2340,7 +2374,7 @@ function renderWelcomeFeed(entries) {
   // Bind card clicks
   welcomeFeedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', async () => {
-      hideConstellation();
+      hideScrubberPopup();
       const key = card.dataset.feedKey;
       try {
         const snap = await firebaseDb.ref('feed/' + key).once('value');
@@ -2365,275 +2399,222 @@ function renderWelcomeFeed(entries) {
       }
     });
   });
-  bindConstellationHovers(welcomeFeedList);
+  bindScrubbers(welcomeFeedList);
 }
 
-// ── Constellation Renderer ──
-class ConstellationRenderer {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.nodes = [];
-    this.edges = [];
-    this.branches = [];
-    this.panX = 0;
-    this.targetPanX = 0;
-    this.totalWidth = 600;
-    this.animFrame = null;
-    this.dpr = window.devicePixelRatio || 1;
-    this._stars = null;
+// ── Exploration Scrubber Controller ──
+const scrubberCache = new Map();
+let activeScrubberPopup = null;
+
+function buildScrubber(card, treeData) {
+  const bar = card.querySelector('.scrubber-bar');
+  if (!bar) return;
+
+  const nodeEntries = treeData.nodes
+    ? Object.entries(treeData.nodes)
+        .map(([id, n]) => ({ id, ...n }))
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+    : [];
+
+  if (nodeEntries.length === 0) {
+    nodeEntries.push({
+      id: 'root', url: treeData.rootUrl || '?', title: '',
+      parentNodeId: null, feedKey: null,
+      timestamp: treeData.createdAt || 0, diffSize: 0, concepts: [],
+    });
   }
 
-  layoutTree(treeData) {
-    this.nodes = [];
-    this.edges = [];
-    this.branches = [];
+  bar.innerHTML = '';
+  bar.style.display = '';
 
-    if (!treeData || !treeData.nodes) {
-      this._layoutSingleNode(treeData);
-      return;
-    }
+  const fill = document.createElement('div');
+  fill.className = 'scrubber-fill';
+  bar.appendChild(fill);
 
-    const nodeEntries = Object.entries(treeData.nodes)
-      .map(([id, n]) => ({ id, ...n }))
-      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const popup = document.createElement('div');
+  popup.className = 'scrubber-popup';
+  popup.innerHTML = '<div class="scrubber-popup-title"></div><div class="scrubber-popup-url"></div><div class="scrubber-popup-concepts"></div><div class="scrubber-popup-diff"></div>';
+  bar.appendChild(popup);
 
-    if (nodeEntries.length === 0) { this._layoutSingleNode(treeData); return; }
-
-    const root = nodeEntries.find(n => !n.parentNodeId) || nodeEntries[0];
-    const children = {};
-    for (const n of nodeEntries) {
-      if (n.parentNodeId) {
-        if (!children[n.parentNodeId]) children[n.parentNodeId] = [];
-        children[n.parentNodeId].push(n);
-      }
-    }
-
-    const SPINE_Y = this.canvas.height / (2 * this.dpr);
-    const X_SPACING = 120;
-    const maxDiff = Math.max(...nodeEntries.map(n => n.diffSize || 1), 1);
-    let currentX = 60;
-
-    const layout = (node, yOffset) => {
-      const norm = (node.diffSize || 0) / maxDiff;
-      const radius = 6 + norm * 14;
-      const laid = { x: currentX, y: SPINE_Y + yOffset, radius, url: node.url || '', title: node.title || '', isRoot: !node.parentNodeId, concepts: node.concepts || [] };
-      this.nodes.push(laid);
-
-      if (laid.concepts.length > 0) {
-        laid.concepts.forEach((c, i) => {
-          const angle = -Math.PI / 4 - (i * Math.PI / 8);
-          const len = 35 + Math.random() * 20;
-          this.branches.push({ fromX: laid.x, fromY: laid.y, toX: laid.x + Math.cos(angle) * len, toY: laid.y + Math.sin(angle) * len, label: c });
-        });
-      }
-
-      const kids = children[node.id] || [];
-      kids.forEach((child, i) => {
-        currentX += X_SPACING;
-        const childY = (i - (kids.length - 1) / 2) * 40;
-        const parent = laid;
-        layout(child, childY);
-        const childNode = this.nodes[this.nodes.length - 1];
-        this.edges.push({ fromX: parent.x, fromY: parent.y, toX: childNode.x, toY: childNode.y });
-      });
-
-      if (kids.length === 0 && node !== root) return;
-      if (kids.length === 0) return;
-    };
-
-    layout(root, 0);
-    this.totalWidth = currentX + 60;
+  const dots = [];
+  for (let i = 0; i < nodeEntries.length; i++) {
+    const node = nodeEntries[i];
+    const pct = nodeEntries.length === 1 ? 50 : (i / (nodeEntries.length - 1)) * 100;
+    const dot = document.createElement('div');
+    dot.className = 'scrubber-dot' + (!node.parentNodeId ? ' root' : '');
+    dot.style.left = pct + '%';
+    bar.appendChild(dot);
+    dots.push({ el: dot, node, pct });
   }
 
-  _layoutSingleNode(treeData) {
-    const cx = this.canvas.width / (2 * this.dpr);
-    const cy = this.canvas.height / (2 * this.dpr);
-    this.nodes = [{ x: cx, y: cy, radius: 10, url: treeData?.rootUrl || '?', title: '', isRoot: true, concepts: [] }];
-    this.totalWidth = this.canvas.width / this.dpr;
+  bar._scrubberData = { dots, popup, fill, nodes: nodeEntries };
+}
+
+function handleScrubberMove(bar, clientX) {
+  const data = bar._scrubberData;
+  if (!data) return;
+
+  const rect = bar.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const pctMouse = ratio * 100;
+
+  let nearest = data.dots[0];
+  let minDist = Infinity;
+  for (const d of data.dots) {
+    const dist = Math.abs(d.pct - pctMouse);
+    if (dist < minDist) { minDist = dist; nearest = d; }
   }
 
-  setPan(ratio) {
-    const canvasW = this.canvas.width / this.dpr;
-    const maxPan = Math.max(0, this.totalWidth - canvasW);
-    this.targetPanX = -ratio * maxPan;
+  for (const d of data.dots) d.el.classList.toggle('active', d === nearest);
+  data.fill.style.width = nearest.pct + '%';
+
+  const popup = data.popup;
+  const node = nearest.node;
+
+  // Horizontal clamp so popup doesn't overflow card edges
+  const barWidth = rect.width;
+  const popupWidth = 160;
+  const dotPx = (nearest.pct / 100) * barWidth;
+  const halfPopup = popupWidth / 2;
+  if (dotPx < halfPopup) {
+    popup.style.transform = 'translateX(0)';
+    popup.style.left = '0';
+  } else if (dotPx > barWidth - halfPopup) {
+    popup.style.transform = 'translateX(-100%)';
+    popup.style.left = '100%';
+  } else {
+    popup.style.transform = 'translateX(-50%)';
+    popup.style.left = nearest.pct + '%';
   }
 
-  render() {
-    this.panX += (this.targetPanX - this.panX) * 0.15;
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.scale(this.dpr, this.dpr);
-    ctx.translate(this.panX, 0);
+  popup.querySelector('.scrubber-popup-title').textContent = node.title || node.url || '?';
 
-    // Background stars
-    if (!this._stars) {
-      this._stars = [];
-      for (let i = 0; i < 60; i++) {
-        this._stars.push({ x: Math.random() * this.totalWidth, y: Math.random() * (h / this.dpr), r: 0.3 + Math.random() * 1.2, a: 0.1 + Math.random() * 0.3 });
-      }
-    }
-    for (const s of this._stars) {
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(240,240,242,${s.a})`;
-      ctx.fill();
-    }
-
-    // Edges
-    ctx.strokeStyle = 'rgba(240,200,216,0.2)';
-    ctx.lineWidth = 1;
-    for (const e of this.edges) {
-      ctx.beginPath();
-      const mx = (e.fromX + e.toX) / 2;
-      ctx.moveTo(e.fromX, e.fromY);
-      ctx.bezierCurveTo(mx, e.fromY, mx, e.toY, e.toX, e.toY);
-      ctx.stroke();
-    }
-
-    // Concept branches
-    ctx.strokeStyle = 'rgba(240,200,216,0.12)';
-    ctx.lineWidth = 0.5;
-    ctx.font = '9px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(144,144,160,0.7)';
-    for (const b of this.branches) {
-      ctx.beginPath();
-      ctx.moveTo(b.fromX, b.fromY);
-      ctx.lineTo(b.toX, b.toY);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(b.toX, b.toY, 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillText(b.label, b.toX + 4, b.toY + 3);
-    }
-
-    // Nodes
-    for (const n of this.nodes) {
-      const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.radius * 2.5);
-      g.addColorStop(0, n.isRoot ? 'rgba(240,200,216,0.3)' : 'rgba(240,200,216,0.15)');
-      g.addColorStop(1, 'rgba(240,200,216,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius * 2.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-      ctx.fillStyle = n.isRoot ? '#f0c8d8' : 'rgba(240,200,216,0.7)';
-      ctx.fill();
-
-      ctx.font = '10px "SF Mono","Fira Code",monospace';
-      ctx.fillStyle = 'rgba(240,240,242,0.5)';
-      ctx.textAlign = 'center';
-      const label = (n.url || '').length > 25 ? n.url.substring(0, 22) + '...' : n.url;
-      ctx.fillText(label, n.x, n.y + n.radius + 14);
-      ctx.textAlign = 'left';
-    }
-
-    ctx.restore();
-    this.animFrame = requestAnimationFrame(() => this.render());
+  const urlEl = popup.querySelector('.scrubber-popup-url');
+  if (node.url) {
+    urlEl.textContent = node.url.length > 40 ? node.url.substring(0, 37) + '...' : node.url;
+    urlEl.style.display = '';
+  } else {
+    urlEl.style.display = 'none';
   }
 
-  start() { if (!this.animFrame) this.render(); }
-  stop() { if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; } }
-  reset() {
-    this.stop();
-    this.nodes = [];
-    this.edges = [];
-    this.branches = [];
-    this._stars = null;
-    this.panX = 0;
-    this.targetPanX = 0;
+  const conceptsEl = popup.querySelector('.scrubber-popup-concepts');
+  if (node.concepts && node.concepts.length > 0) {
+    conceptsEl.innerHTML = node.concepts.map(c => `<span class="scrubber-concept-tag">${escapeHtml(c)}</span>`).join('');
+    conceptsEl.style.display = '';
+  } else {
+    conceptsEl.style.display = 'none';
+  }
+
+  const diffEl = popup.querySelector('.scrubber-popup-diff');
+  if (node.diffSize > 0) {
+    diffEl.innerHTML = '<span class="diff-count">+' + node.diffSize + '</span> new words';
+    diffEl.style.display = '';
+  } else if (!node.parentNodeId) {
+    diffEl.innerHTML = 'origin';
+    diffEl.style.display = '';
+  } else {
+    diffEl.style.display = 'none';
+  }
+
+  popup.classList.add('visible');
+  activeScrubberPopup = popup;
+}
+
+function handleScrubberClick(bar, clientX) {
+  const data = bar._scrubberData;
+  if (!data) return;
+
+  const rect = bar.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const pctMouse = ratio * 100;
+
+  let nearest = data.dots[0];
+  let minDist = Infinity;
+  for (const d of data.dots) {
+    const dist = Math.abs(d.pct - pctMouse);
+    if (dist < minDist) { minDist = dist; nearest = d; }
+  }
+
+  const node = nearest.node;
+  if (node.feedKey) loadFeedEntry(node.feedKey);
+}
+
+async function loadFeedEntry(feedKey) {
+  if (!state.firebaseReady || !firebaseDb) return;
+  try {
+    const snap = await firebaseDb.ref('feed/' + feedKey).once('value');
+    const entry = snap.val();
+    if (entry && entry.html) {
+      addressInput.value = entry.url;
+      pageContainer.innerHTML = entry.html;
+      bindPageLinks();
+      state.history = state.history.slice(0, state.historyIndex + 1);
+      state.history.push({ url: entry.url, html: pageContainer.innerHTML });
+      state.historyIndex = state.history.length - 1;
+      updateNavButtons();
+      state.currentFeedKey = feedKey;
+      state.currentExplorationId = entry.explorationId || null;
+      $('#contentArea').scrollTop = 0;
+    } else if (entry) {
+      navigateTo(entry.url);
+    }
+  } catch { /* silent */ }
+  toggleFeed(false);
+}
+
+function hideScrubberPopup() {
+  if (activeScrubberPopup) {
+    activeScrubberPopup.classList.remove('visible');
+    activeScrubberPopup = null;
   }
 }
 
-// ── Constellation Hover Controller ──
-const constellationWrapper = $('#constellationWrapper');
-const constellationCanvas = $('#constellationCanvas');
-const constellationCache = new Map();
-let constellationRenderer = null;
-let constellationHoverTimeout = null;
-const CONSTELLATION_W = 560;
-const CONSTELLATION_H = 200;
-
-function showConstellation(card) {
+function fetchAndBuildScrubber(card) {
   const explorationId = card.dataset.explorationId;
-  if (!explorationId) { showSingleNodeConstellation(card); return; }
+  if (!explorationId) return;
 
-  const cached = constellationCache.get(explorationId);
+  const cached = scrubberCache.get(explorationId);
   if (cached && (Date.now() - cached.at < 300000)) {
-    renderConstellation(card, cached.data);
+    buildScrubber(card, cached.data);
     return;
   }
 
-  if (!state.firebaseReady || !firebaseDb) { showSingleNodeConstellation(card); return; }
+  if (!state.firebaseReady || !firebaseDb) return;
 
   firebaseDb.ref('explorations/' + explorationId).once('value')
     .then(snap => {
       const data = snap.val();
       if (data) {
-        constellationCache.set(explorationId, { data, at: Date.now() });
-        if (card.matches(':hover')) renderConstellation(card, data);
-      } else {
-        showSingleNodeConstellation(card);
+        scrubberCache.set(explorationId, { data, at: Date.now() });
+        buildScrubber(card, data);
       }
     })
-    .catch(() => showSingleNodeConstellation(card));
+    .catch(() => {});
 }
 
-function showSingleNodeConstellation(card) {
-  const url = card.querySelector('.feed-card-url')?.textContent?.replace('sidenet://', '') || '?';
-  renderConstellation(card, { rootUrl: url, nodes: null });
-}
-
-function renderConstellation(card, treeData) {
-  if (!constellationRenderer) constellationRenderer = new ConstellationRenderer(constellationCanvas);
-  const dpr = window.devicePixelRatio || 1;
-  constellationCanvas.width = CONSTELLATION_W * dpr;
-  constellationCanvas.height = CONSTELLATION_H * dpr;
-  constellationCanvas.style.width = CONSTELLATION_W + 'px';
-  constellationCanvas.style.height = CONSTELLATION_H + 'px';
-
-  constellationRenderer.reset();
-  constellationRenderer.layoutTree(treeData);
-
-  const rect = card.getBoundingClientRect();
-  let left = rect.left + rect.width / 2 - CONSTELLATION_W / 2;
-  let top = rect.top > CONSTELLATION_H + 16 ? rect.top - CONSTELLATION_H - 8 : rect.bottom + 8;
-  left = Math.max(8, Math.min(left, window.innerWidth - CONSTELLATION_W - 8));
-  constellationWrapper.style.left = left + 'px';
-  constellationWrapper.style.top = top + 'px';
-  constellationWrapper.style.width = CONSTELLATION_W + 'px';
-  constellationWrapper.style.height = CONSTELLATION_H + 'px';
-
-  constellationWrapper.classList.add('visible');
-  constellationRenderer.start();
-}
-
-function hideConstellation() {
-  constellationWrapper.classList.remove('visible');
-  if (constellationRenderer) constellationRenderer.stop();
-}
-
-function bindConstellationHovers(container) {
+function bindScrubbers(container) {
   container.querySelectorAll('.feed-card').forEach(card => {
-    card.addEventListener('mouseenter', () => {
-      clearTimeout(constellationHoverTimeout);
-      constellationHoverTimeout = setTimeout(() => showConstellation(card), 200);
+    fetchAndBuildScrubber(card);
+
+    const bar = card.querySelector('.scrubber-bar');
+    if (!bar) return;
+
+    bar.addEventListener('mousemove', (e) => {
+      e.stopPropagation();
+      handleScrubberMove(bar, e.clientX);
     });
-    card.addEventListener('mousemove', (e) => {
-      if (constellationRenderer && constellationWrapper.classList.contains('visible')) {
-        const rect = card.getBoundingClientRect();
-        const ratio = (e.clientX - rect.left) / rect.width;
-        constellationRenderer.setPan(Math.max(0, Math.min(1, ratio)));
+
+    bar.addEventListener('mouseleave', () => {
+      hideScrubberPopup();
+      if (bar._scrubberData) {
+        for (const d of bar._scrubberData.dots) d.el.classList.remove('active');
+        bar._scrubberData.fill.style.width = '0';
       }
     });
-    card.addEventListener('mouseleave', () => {
-      clearTimeout(constellationHoverTimeout);
-      hideConstellation();
+
+    bar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleScrubberClick(bar, e.clientX);
     });
   });
 }
