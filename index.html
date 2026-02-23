@@ -1711,7 +1711,7 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     // Auto-publish to community feed and track exploration tree
     const feedKey = await publishToFeed(storageUrl, pageTitle, pageContainer.innerHTML);
     state.currentFeedKey = feedKey;
-    updateExplorationTree(query, pageTitle, feedKey, pageContainer.innerHTML, { parentFeedKey, explorationId, parentHtml });
+    await updateExplorationTree(query, pageTitle, feedKey, pageContainer.innerHTML, { parentFeedKey, explorationId, parentHtml });
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
