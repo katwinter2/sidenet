@@ -2597,12 +2597,23 @@ async function loadWelcomeFeed() {
       entries.push({ key: child.key, ...child.val() });
     });
     entries.reverse();
-    // Deduplicate: show only the latest entry per exploration tree
-    const seen = new Set();
+    // Deduplicate: show only the latest entry per version tree
+    const seenExplorations = new Set();
+    const seenUrls = []; // track URLs we've already accepted
     const deduped = entries.filter(e => {
-      if (!e.explorationId) return true; // no tree — always show
-      if (seen.has(e.explorationId)) return false;
-      seen.add(e.explorationId);
+      // Deduplicate by explorationId
+      if (e.explorationId) {
+        if (seenExplorations.has(e.explorationId)) return false;
+        seenExplorations.add(e.explorationId);
+      }
+      // Deduplicate by URL lineage — skip if this URL is an ancestor/descendant of one already shown
+      const url = (e.url || '').toLowerCase();
+      if (url) {
+        for (const prev of seenUrls) {
+          if (url === prev || url.startsWith(prev + '/') || prev.startsWith(url + '/')) return false;
+        }
+        seenUrls.push(url);
+      }
       return true;
     });
     renderWelcomeFeed(deduped);
