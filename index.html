@@ -171,11 +171,22 @@
     border-color: var(--accent);
   }
 
+  /* Main content row: content + feed sidebar */
+  .main-row {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    min-height: 0;
+  }
+
   /* Main content area */
   .content-area {
     flex: 1;
     overflow-y: auto;
     padding: 0;
+    min-width: 0;
+    transition: flex 0.3s ease;
   }
 
   .page-container {
@@ -963,22 +974,24 @@
 
   .history-backdrop.open { display: block; }
 
-  /* Feed panel (left side) */
+  /* Feed panel (inline sidebar, right side) */
   .feed-panel {
-    position: fixed;
-    top: 0;
-    left: -420px;
-    width: 420px;
-    height: 100vh;
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
     background: var(--surface);
-    border-right: 1px solid var(--border);
-    z-index: 90;
+    border-left: 0 solid var(--border);
     display: flex;
     flex-direction: column;
-    transition: left 0.25s ease;
+    flex-shrink: 0;
+    transition: width 0.3s ease, min-width 0.3s ease, border-left-width 0.3s ease;
   }
 
-  .feed-panel.open { left: 0; }
+  .feed-panel.open {
+    width: 380px;
+    min-width: 380px;
+    border-left-width: 1px;
+  }
 
   .feed-header {
     display: flex;
@@ -1091,14 +1104,8 @@
   }
 
   .feed-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 89;
-    display: none;
+    display: none !important;
   }
-
-  .feed-backdrop.open { display: block; }
 
 </style>
 </head>
@@ -1153,45 +1160,49 @@
   </div>
 </div>
 
-<!-- Main content -->
-<div class="content-area" id="contentArea">
-  <div class="page-container" id="pageContainer">
-    <div class="welcome-header">
-      <div class="welcome-logo">sidenet</div>
-      <div class="welcome-hints">
-        <div class="hint-chip" onclick="navigateTo('en.wikipedia.alt/wiki/The_Great_Martian_Canal_System')">wikipedia.alt/Martian Canals</div>
-        <div class="hint-chip" onclick="navigateTo('news.alternate/2099/quantum-internet-goes-live')">Future News</div>
-        <div class="hint-chip" onclick="navigateTo('recipes.alt/interdimensional-cooking/phase-shifted-pasta')">Interdimensional Recipes</div>
-        <div class="hint-chip" onclick="navigateTo('shop.parallel/products/gravity-boots-pro')">Gravity Boots Store</div>
-        <div class="hint-chip" onclick="navigateTo('A forum discussing the best places to visit in the dream world')">Dream Travel Forum</div>
+<!-- Main row: content + feed sidebar -->
+<div class="main-row" id="mainRow">
+  <!-- Main content -->
+  <div class="content-area" id="contentArea">
+    <div class="page-container" id="pageContainer">
+      <div class="welcome-header">
+        <div class="welcome-logo">sidenet</div>
+        <div class="welcome-hints">
+          <div class="hint-chip" onclick="navigateTo('en.wikipedia.alt/wiki/The_Great_Martian_Canal_System')">wikipedia.alt/Martian Canals</div>
+          <div class="hint-chip" onclick="navigateTo('news.alternate/2099/quantum-internet-goes-live')">Future News</div>
+          <div class="hint-chip" onclick="navigateTo('recipes.alt/interdimensional-cooking/phase-shifted-pasta')">Interdimensional Recipes</div>
+          <div class="hint-chip" onclick="navigateTo('shop.parallel/products/gravity-boots-pro')">Gravity Boots Store</div>
+          <div class="hint-chip" onclick="navigateTo('A forum discussing the best places to visit in the dream world')">Dream Travel Forum</div>
+        </div>
+      </div>
+      <div class="welcome-feed-section">
+        <div class="welcome-feed-header">
+          <h3>Today's Catch</h3>
+          <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
+        </div>
+        <div class="welcome-feed-list" id="welcomeFeedList">
+          <div class="feed-empty">Loading community feed...</div>
+        </div>
       </div>
     </div>
-    <div class="welcome-feed-section">
-      <div class="welcome-feed-header">
-        <h3>Today's Catch</h3>
-        <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
+  </div>
+
+  <!-- Feed panel (inline sidebar) -->
+  <div class="feed-panel" id="feedPanel">
+    <div class="feed-header">
+      <h3>Community Feed</h3>
+      <div class="feed-header-actions">
+        <button id="refreshFeedBtn">Refresh</button>
+        <button id="closeFeedBtn">Close</button>
       </div>
-      <div class="welcome-feed-list" id="welcomeFeedList">
-        <div class="feed-empty">Loading community feed...</div>
-      </div>
+    </div>
+    <div class="feed-list" id="feedList">
+      <div class="feed-empty">Loading community pages...</div>
     </div>
   </div>
 </div>
 
-<!-- Feed panel -->
 <div class="feed-backdrop" id="feedBackdrop"></div>
-<div class="feed-panel" id="feedPanel">
-  <div class="feed-header">
-    <h3>Community Feed</h3>
-    <div class="feed-header-actions">
-      <button id="refreshFeedBtn">Refresh</button>
-      <button id="closeFeedBtn">Close</button>
-    </div>
-  </div>
-  <div class="feed-list" id="feedList">
-    <div class="feed-empty">Loading community pages...</div>
-  </div>
-</div>
 
 <!-- History panel -->
 <div class="history-backdrop" id="historyBackdrop"></div>
@@ -2388,7 +2399,6 @@ function renderFeed(entries) {
         const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
         navigateTo(url);
       }
-      toggleFeed(false);
     });
   });
   bindScrubbers(feedList, entries);
@@ -2668,7 +2678,6 @@ async function loadFeedEntry(feedKey) {
       navigateTo(entry.url);
     }
   } catch { /* silent */ }
-  toggleFeed(false);
 }
 
 function hideScrubberPopup() {
