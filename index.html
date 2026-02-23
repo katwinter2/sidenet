@@ -11,6 +11,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root {
     --bg: #1a1a1a;
@@ -783,7 +785,7 @@
     transform: translateX(-50%);
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 8px 12px;
-    min-width: 160px; max-width: 260px;
+    min-width: 160px; max-width: 280px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
     pointer-events: none; opacity: 0;
     transition: opacity 0.15s ease; z-index: 10; font-size: 12px;
@@ -801,6 +803,8 @@
   .scrubber-concept-tag { background: var(--bg); color: var(--text-dim); padding: 2px 6px; border-radius: 4px; font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scrubber-popup-diff { margin-top: 4px; font-size: 10px; color: var(--text-dim); }
   .scrubber-popup-diff .diff-count { color: var(--green); font-weight: 500; }
+  .scrubber-popup-thumb { margin-bottom: 6px; border-radius: 4px; overflow: hidden; background: var(--bg); }
+  .scrubber-popup-thumb img { width: 100%; height: auto; max-height: 120px; object-fit: cover; display: block; border-radius: 4px; }
 
   /* History panel */
   .history-panel {
@@ -1079,6 +1083,20 @@
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 10px;
+  }
+  .feed-card-thumb {
+    margin: -14px -16px 10px -16px;
+    border-radius: 10px 10px 0 0;
+    overflow: hidden;
+    background: var(--bg);
+    max-height: 140px;
+  }
+  .feed-card-thumb img {
+    width: 100%;
+    height: auto;
+    max-height: 140px;
+    object-fit: cover;
+    display: block;
   }
 
   .feed-backdrop {
@@ -1386,6 +1404,7 @@ const closePromptEditorBtn = $('#closePromptEditorBtn');
 // ── Init ──
 let firebaseDb = null;
 let firebaseAuth = null;
+let firebaseStorage = null;
 updateStatusBar();
 apiKeyInput.value = state.apiKey;
 imagesPerPageInput.value = state.imagesPerPage;
@@ -1904,6 +1923,25 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     state.currentFeedKey = feedKey;
     await updateExplorationTree(query, pageTitle, feedKey, packed, { parentFeedKey, explorationId, parentHtml });
 
+    // Capture screenshot asynchronously (don't block page display)
+    if (feedKey) {
+      if (js.trim()) {
+        captureHtmlAsScreenshot(processedHtml, css, feedKey).then(url => {
+          if (url) updateNodeScreenshot(feedKey, state.currentExplorationId, url);
+        });
+      } else {
+        const imgs = pageContainer.querySelectorAll('.page-image');
+        const waits = [...imgs].map(img =>
+          img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; setTimeout(r, 10000); })
+        );
+        Promise.allSettled(waits).then(() => {
+          captureAndUploadScreenshot(feedKey).then(url => {
+            if (url) updateNodeScreenshot(feedKey, state.currentExplorationId, url);
+          });
+        });
+      }
+    }
+
     // Scroll to top
     $('#contentArea').scrollTop = 0;
 
@@ -2302,7 +2340,7 @@ function renderHistoryPanel() {
       <div class="history-item" data-ts="${entry.timestamp}" data-url="${escapeHtml(entry.url)}">
         <div class="history-item-content">
           <div class="history-item-title">${title}</div>
-          <div class="history-item-url">sidenet://${url}</div>
+          <div class="history-item-url">s/${url}</div>
         </div>
         <span class="history-item-time">${time}</span>
         <button class="history-item-delete" data-delete-ts="${entry.timestamp}" title="Remove">&times;</button>
@@ -2372,6 +2410,7 @@ function initFirebase() {
     }
     firebaseDb = firebase.database();
     firebaseAuth = firebase.auth();
+    firebaseStorage = firebase.storage();
 
     firebaseAuth.onAuthStateChanged(async (user) => {
       if (user) {
@@ -2460,6 +2499,8 @@ function publishToFeed(url, title, html) {
   const { html: rawForPreview } = unpackPageContent(cleanHtml);
   const tmp = document.createElement('div');
   tmp.innerHTML = rawForPreview;
+  const h1 = tmp.querySelector('h1');
+  if (h1) h1.remove();
   const preview = tmp.textContent.substring(0, 200).trim();
 
   const newRef = firebaseDb.ref('feed').push();
@@ -2474,6 +2515,89 @@ function publishToFeed(url, title, html) {
     timestamp: Date.now(),
     explorationId: null,
   }).then(() => { feedCache.at = 0; return feedKey; }).catch(() => null);
+}
+
+// ── Screenshot capture ──
+
+async function captureAndUploadScreenshot(feedKey) {
+  if (!firebaseStorage || !feedKey) return null;
+  try {
+    const target = pageContainer.querySelector('.generated-page');
+    if (!target) return null;
+    await new Promise(r => setTimeout(r, 300));
+    const canvas = await html2canvas(target, {
+      backgroundColor: '#1a1a1a',
+      scale: 0.5,
+      width: target.scrollWidth,
+      height: Math.min(target.scrollHeight, 800),
+      logging: false,
+      useCORS: true,
+      allowTaint: true,
+    });
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
+    if (!blob || blob.size < 100) return null;
+    const ref = firebaseStorage.ref('screenshots/' + feedKey + '.jpg');
+    const snap = await ref.put(blob, { contentType: 'image/jpeg' });
+    const downloadUrl = await snap.ref.getDownloadURL();
+    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(downloadUrl);
+    return downloadUrl;
+  } catch (err) {
+    console.error('Screenshot capture failed:', err);
+    return null;
+  }
+}
+
+async function captureHtmlAsScreenshot(html, css, feedKey) {
+  if (!firebaseStorage || !feedKey) return null;
+  try {
+    const offscreen = document.createElement('div');
+    offscreen.className = 'generated-page';
+    offscreen.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;overflow:hidden;';
+    if (css) {
+      const style = document.createElement('style');
+      style.textContent = css;
+      offscreen.appendChild(style);
+    }
+    const content = document.createElement('div');
+    content.innerHTML = html;
+    offscreen.appendChild(content);
+    document.body.appendChild(offscreen);
+    await new Promise(r => setTimeout(r, 100));
+    const canvas = await html2canvas(offscreen, {
+      backgroundColor: '#1a1a1a',
+      scale: 0.5,
+      width: 800,
+      height: Math.min(offscreen.scrollHeight, 800),
+      logging: false,
+    });
+    document.body.removeChild(offscreen);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
+    if (!blob || blob.size < 100) return null;
+    const ref = firebaseStorage.ref('screenshots/' + feedKey + '.jpg');
+    const snap = await ref.put(blob, { contentType: 'image/jpeg' });
+    const downloadUrl = await snap.ref.getDownloadURL();
+    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(downloadUrl);
+    return downloadUrl;
+  } catch (err) {
+    console.error('Screenshot capture (offscreen) failed:', err);
+    return null;
+  }
+}
+
+async function updateNodeScreenshot(feedKey, explorationId, screenshotUrl) {
+  if (!firebaseDb || !explorationId || !feedKey) return;
+  try {
+    const nodesSnap = await firebaseDb.ref('explorations/' + explorationId + '/nodes').once('value');
+    if (nodesSnap.exists()) {
+      nodesSnap.forEach(child => {
+        if (child.val().feedKey === feedKey) {
+          firebaseDb.ref('explorations/' + explorationId + '/nodes/' + child.key + '/screenshotUrl').set(screenshotUrl);
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Failed to update node screenshot:', err);
+  }
 }
 
 function computeContentDiff(parentHtml, childHtml) {
@@ -2627,10 +2751,12 @@ function renderFeed(entries) {
     const author = escapeHtml(entry.author || 'Anonymous');
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
+    const thumb = entry.screenshotUrl ? `<div class="feed-card-thumb"><img src="${escapeHtml(entry.screenshotUrl)}" alt="" loading="lazy" /></div>` : '';
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
+        ${thumb}
         <div class="feed-card-title">${title}</div>
-        <div class="feed-card-url">sidenet://${url}</div>
+        <div class="feed-card-url">s/${url}</div>
         <div class="feed-card-preview">${preview}</div>
         <div class="feed-card-meta">
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
@@ -2671,7 +2797,7 @@ function renderFeed(entries) {
         }
       } catch {
         // Fallback: just navigate
-        const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
+        const url = card.querySelector('.feed-card-url').textContent.replace(/^s\//, '');
         navigateTo(url);
       }
     });
@@ -2765,10 +2891,12 @@ function renderWelcomeFeed(entries, allEntries) {
     const author = escapeHtml(entry.author || 'Anonymous');
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
+    const thumb = entry.screenshotUrl ? `<div class="feed-card-thumb"><img src="${escapeHtml(entry.screenshotUrl)}" alt="" loading="lazy" /></div>` : '';
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
+        ${thumb}
         <div class="feed-card-title">${title}</div>
-        <div class="feed-card-url">sidenet://${url}</div>
+        <div class="feed-card-url">s/${url}</div>
         <div class="feed-card-preview">${preview}</div>
         <div class="feed-card-meta">
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
@@ -2808,7 +2936,7 @@ function renderWelcomeFeed(entries, allEntries) {
           navigateTo(entry.url);
         }
       } catch {
-        const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
+        const url = card.querySelector('.feed-card-url').textContent.replace(/^s\//, '');
         navigateTo(url);
       }
     });
@@ -2847,7 +2975,7 @@ function buildScrubber(card, treeData) {
 
   const popup = document.createElement('div');
   popup.className = 'scrubber-popup';
-  popup.innerHTML = '<div class="scrubber-popup-title"></div><div class="scrubber-popup-url"></div><div class="scrubber-popup-concepts"></div><div class="scrubber-popup-diff"></div>';
+  popup.innerHTML = '<div class="scrubber-popup-thumb"></div><div class="scrubber-popup-title"></div><div class="scrubber-popup-url"></div><div class="scrubber-popup-concepts"></div><div class="scrubber-popup-diff"></div>';
   bar.appendChild(popup);
 
   const dots = [];
@@ -2905,7 +3033,7 @@ function handleScrubberMove(bar, clientX) {
 
   const urlEl = popup.querySelector('.scrubber-popup-url');
   if (node.url) {
-    urlEl.textContent = node.url.length > 40 ? node.url.substring(0, 37) + '...' : node.url;
+    urlEl.textContent = 's/' + (node.url.length > 38 ? node.url.substring(0, 35) + '...' : node.url);
     urlEl.style.display = '';
   } else {
     urlEl.style.display = 'none';
@@ -2928,6 +3056,18 @@ function handleScrubberMove(bar, clientX) {
     diffEl.style.display = '';
   } else {
     diffEl.style.display = 'none';
+  }
+
+  const thumbEl = popup.querySelector('.scrubber-popup-thumb');
+  if (node.screenshotUrl) {
+    thumbEl.style.display = '';
+    const existing = thumbEl.querySelector('img');
+    if (!existing || existing.src !== node.screenshotUrl) {
+      thumbEl.innerHTML = '<img src="' + escapeHtml(node.screenshotUrl) + '" alt="" />';
+    }
+  } else {
+    thumbEl.style.display = 'none';
+    thumbEl.innerHTML = '';
   }
 
   popup.classList.add('visible');
@@ -2984,7 +3124,7 @@ function hideScrubberPopup() {
 
 function fetchAndBuildScrubber(card, allEntries) {
   const explorationId = card.dataset.explorationId;
-  const cardUrl = (card.querySelector('.feed-card-url')?.textContent || '').replace('sidenet://', '').toLowerCase();
+  const cardUrl = (card.querySelector('.feed-card-url')?.textContent || '').replace(/^s\//, '').toLowerCase();
   if (!cardUrl) return;
 
   const cacheKey = explorationId || 'url:' + cardUrl;
