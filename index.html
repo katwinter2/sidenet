@@ -1495,21 +1495,28 @@ clearHistoryBtn.addEventListener('click', () => {
 let firebaseDb = null;
 
 function initFirebase() {
+  const dbg = (msg) => {
+    console.log('[SideNet]', msg);
+    if (welcomeFeedList) {
+      welcomeFeedList.innerHTML = `<div class="feed-empty">${msg}</div>`;
+    }
+  };
   try {
     if (typeof firebase === 'undefined') {
-      console.warn('Firebase SDK not loaded yet, retrying...');
+      dbg('Firebase SDK not loaded yet, retrying in 500ms...');
       setTimeout(initFirebase, 500);
       return;
     }
+    dbg('Firebase SDK found, initializing...');
     if (!firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     firebaseDb = firebase.database();
     state.firebaseReady = true;
-    // Trigger welcome feed now that Firebase is ready
+    dbg('Firebase connected! Loading feed...');
     loadWelcomeFeed();
   } catch (err) {
-    console.error('Firebase init failed:', err);
+    dbg('Firebase init FAILED: ' + err.message);
     state.firebaseReady = false;
   }
 }
