@@ -2271,7 +2271,7 @@ function publishToFeed(url, title, html) {
     model: modelSelect.value,
     timestamp: Date.now(),
     explorationId: null,
-  }).then(() => feedKey).catch(() => null);
+  }).then(() => { feedCache.at = 0; return feedKey; }).catch(() => null);
 }
 
 function computeContentDiff(parentHtml, childHtml) {
@@ -2379,10 +2379,18 @@ async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey,
   }
 }
 
-async function loadFeed() {
+let feedCache = { entries: null, at: 0 };
+const FEED_CACHE_TTL = 60000; // 1 minute
+
+async function loadFeed(bypassCache) {
   if (!state.firebaseReady || !firebaseDb) {
     feedList.innerHTML = `<div class="feed-empty">Community feed connecting...</div>`;
     setTimeout(() => { if (state.firebaseReady) loadFeed(); }, 1000);
+    return;
+  }
+  // Serve from cache if fresh
+  if (!bypassCache && feedCache.entries && (Date.now() - feedCache.at < FEED_CACHE_TTL)) {
+    renderFeed(feedCache.entries);
     return;
   }
   feedList.innerHTML = '<div class="feed-empty">Loading...</div>';
@@ -2396,6 +2404,7 @@ async function loadFeed() {
       entries.push({ key: child.key, ...child.val() });
     });
     entries.reverse(); // newest first
+    feedCache = { entries, at: Date.now() };
     renderFeed(entries);
   } catch (err) {
     feedList.innerHTML = `<div class="feed-empty">Error loading feed: ${escapeHtml(err.message)}</div>`;
@@ -2496,7 +2505,7 @@ feedBtn.addEventListener('click', () => {
 });
 closeFeedBtn.addEventListener('click', () => { state.feedClosedByUser = true; toggleFeed(false); });
 feedBackdrop.addEventListener('click', () => { state.feedClosedByUser = true; toggleFeed(false); });
-refreshFeedBtn.addEventListener('click', () => loadFeed());
+refreshFeedBtn.addEventListener('click', () => loadFeed(true));
 
 // ── Welcome page feed (inline) ──
 async function loadWelcomeFeed() {
