@@ -2067,35 +2067,33 @@ function renderStructuredPage(html, css, js) {
 }
 
 function renderInIframe(html, css, js) {
-  const doc = `<!DOCTYPE html><html><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>
-:root{--bg:#1a1a1a;--text:#e0e0e0;--accent:#e8a0bf;--border:#333;--surface:#242424;--surface2:#2a2a2a;--text-dim:#888}
-body{background:var(--bg);color:var(--text);font-family:'Ubuntu Condensed','Segoe UI',system-ui,sans-serif;line-height:1.7;padding:24px;margin:0}
-a{color:var(--accent);text-decoration:none;cursor:pointer}
-a:hover{color:#f0b8d0;border-bottom:1px solid #f0b8d0}
-img{max-width:100%;border-radius:8px;border:1px solid var(--border)}
-blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:14px 0;background:var(--surface);border-radius:0 6px 6px 0}
-table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}th{background:var(--surface2);font-weight:600}
-code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-family:'SF Mono','Fira Code',monospace;font-size:13px}
-pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto}pre code{background:none;padding:0}
-hr{border:none;border-top:1px solid var(--border);margin:24px 0}
-</style>
-<style>${css}</style>
-</head><body>
-${html}
-<script>
-(function(){
-  new ResizeObserver(function(){
-    window.parent.postMessage({type:'sidenet-resize',height:document.body.scrollHeight},'*');
-  }).observe(document.body);
-  document.addEventListener('click',function(e){
-    var a=e.target.closest('a[href]');
-    if(a){e.preventDefault();window.parent.postMessage({type:'sidenet-navigate',href:a.getAttribute('href')},'*');}
-  });
-})();
-try{${js}}catch(e){console.error('[sidenet page]',e);}
-</script></body></html>`;
+  const S = '<' + 'script>';
+  const SE = '</' + 'script>';
+  const doc = '<!DOCTYPE html><html><head>'
+    + '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
+    + '<style>'
+    + ':root{--bg:#1a1a1a;--text:#e0e0e0;--accent:#e8a0bf;--border:#333;--surface:#242424;--surface2:#2a2a2a;--text-dim:#888}'
+    + 'body{background:var(--bg);color:var(--text);font-family:\'Ubuntu Condensed\',\'Segoe UI\',system-ui,sans-serif;line-height:1.7;padding:24px;margin:0}'
+    + 'a{color:var(--accent);text-decoration:none;cursor:pointer}'
+    + 'a:hover{color:#f0b8d0;border-bottom:1px solid #f0b8d0}'
+    + 'img{max-width:100%;border-radius:8px;border:1px solid var(--border)}'
+    + 'blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:14px 0;background:var(--surface);border-radius:0 6px 6px 0}'
+    + 'table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}th{background:var(--surface2);font-weight:600}'
+    + 'code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-family:\'SF Mono\',\'Fira Code\',monospace;font-size:13px}'
+    + 'pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto}pre code{background:none;padding:0}'
+    + 'hr{border:none;border-top:1px solid var(--border);margin:24px 0}'
+    + '</style>'
+    + '<style>' + css + '</style>'
+    + '</head><body>'
+    + html
+    + S
+    + '(function(){'
+    + 'new ResizeObserver(function(){window.parent.postMessage({type:"sidenet-resize",height:document.body.scrollHeight},"*");}).observe(document.body);'
+    + 'document.addEventListener("click",function(e){var a=e.target.closest("a[href]");if(a){e.preventDefault();window.parent.postMessage({type:"sidenet-navigate",href:a.getAttribute("href")},"*");}});'
+    + '})();'
+    + 'try{' + js + '}catch(e){console.error("[sidenet page]",e);}'
+    + SE
+    + '</body></html>';
 
   const iframe = document.createElement('iframe');
   iframe.sandbox = 'allow-scripts';
