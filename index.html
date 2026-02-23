@@ -1295,21 +1295,29 @@ const FIREBASE_CONFIG = {
   appId: "1:__FIREBASE_MESSAGING_SENDER_ID__:web:82aa4199ba940a05db5c6f",
 };
 
-const DEFAULT_SYSTEM_PROMPT = `You are sidenet, an AI that generates creative, detailed HTML pages for an alternate-reality internet browser.
+const DEFAULT_SYSTEM_PROMPT = `You are sidenet, an AI that generates creative, detailed pages for an alternate-reality internet browser.
+
+FORMAT:
+Always output your response in three labeled sections, each starting with a delimiter on its own line:
+
+===HTML===
+(page body content — no <html>, <head>, or <body> tags)
+===CSS===
+(styles for your page — use @import for Google Fonts if desired)
+===JS===
+(JavaScript for interactivity — optional, leave empty if not needed)
 
 RULES:
-- Output ONLY raw HTML content (no \`\`\`html blocks, no markdown, no explanations)
 - Use semantic HTML: h1, h2, h3, p, ul, ol, blockquote, table, pre, code, hr, etc.
-- Include 1-3 images using this EXACT format: <img data-ai-prompt="detailed image description here" alt="description" />
-- Include 3-6 hyperlinks using this format: <a href="sidenet://some-url-path">Link Text</a>
-  - Links should point to related pages on this alternate internet
-  - Use creative, plausible URLs like sidenet://en.wikipedia.alt/wiki/Topic or sidenet://news.alt/article-slug
-- Make the content creative, detailed, internally consistent, and immersive
-- Pages should feel like real websites from a parallel universe - wikis, shops, forums, news sites, blogs, documentation, etc.
-- Be inventive with alternate history, science, culture, and technology
+- Include 1-3 images: <img data-ai-prompt="detailed description" alt="description" />
+- Include 3-6 hyperlinks: <a href="sidenet://some-url-path">Link Text</a>
+  - Use creative URLs like sidenet://en.wikipedia.alt/wiki/Topic
+- Make content creative, detailed, internally consistent, and immersive
+- Pages should feel like real websites from a parallel universe
 - Content should be 300-600 words
-- Do NOT include <html>, <head>, or <body> tags - just the inner content
-- You MAY include a <style> tag to add custom styling, including @import for Google Fonts (e.g. @import url('https://fonts.googleapis.com/css2?family=FontName&display=swap')). Use fonts that match the mood and genre of the page.`;
+- Use JS for interactive elements (tabs, toggles, animations, calculators, etc.)
+- JS can use querySelector/getElementById to reference your HTML elements
+- Do NOT output markdown code fences — just the raw sections`;
 
 const state = {
   apiKey: localStorage.getItem('sidenet_apiKey') || '',
@@ -1458,6 +1466,22 @@ initFirebase();
 
   if (!document.hidden) startFaviconCycle();
 })();
+
+// ── Iframe postMessage bridge ──
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'sidenet-navigate') {
+    let href = e.data.href.replace(/^(sidenet|side):\/\//, '');
+    navigateTo(href, {
+      parentFeedKey: state.currentFeedKey,
+      explorationId: state.currentExplorationId,
+      parentHtml: pageContainer.innerHTML,
+    });
+  }
+  if (e.data?.type === 'sidenet-resize') {
+    const iframe = pageContainer.querySelector('iframe');
+    if (iframe) iframe.style.height = e.data.height + 'px';
+  }
+});
 
 // ── Settings ──
 settingsBtn.addEventListener('click', () => {
@@ -1689,8 +1713,7 @@ window.addEventListener('popstate', (e) => {
     addressInput.value = sidenetUrl;
     const found = state.history.find(h => h.url === sidenetUrl);
     if (found && found.html) {
-      pageContainer.innerHTML = found.html;
-      bindPageLinks();
+      restorePage(found.html);
       if (!state.feedClosedByUser) toggleFeed(true);
     } else {
       navigateTo(sidenetUrl);
@@ -1714,8 +1737,7 @@ backBtn.addEventListener('click', () => {
     state.historyIndex--;
     const entry = state.history[state.historyIndex];
     addressInput.value = entry.url;
-    pageContainer.innerHTML = entry.html;
-    bindPageLinks();
+    restorePage(entry.html);
     updateNavButtons();
     updateBrowserUrl(entry.url);
   }
@@ -1726,8 +1748,7 @@ forwardBtn.addEventListener('click', () => {
     state.historyIndex++;
     const entry = state.history[state.historyIndex];
     addressInput.value = entry.url;
-    pageContainer.innerHTML = entry.html;
-    bindPageLinks();
+    restorePage(entry.html);
     updateNavButtons();
     updateBrowserUrl(entry.url);
   }
@@ -1791,8 +1812,7 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     const choice = await showDuplicateModal();
     if (choice === 'existing') {
       addressInput.value = existingEntry.url;
-      pageContainer.innerHTML = existingEntry.html;
-      bindPageLinks();
+      restorePage(existingEntry.html);
       state.history = state.history.slice(0, state.historyIndex + 1);
       state.history.push({ url: existingEntry.url, html: existingEntry.html });
       state.historyIndex = state.history.length - 1;
@@ -1843,41 +1863,46 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     // Step 1: Generate page HTML
     const pageHTML = await generatePage(query);
 
-    // Step 2: Parse out image placeholders and render page
-    const { html, imagePrompts } = parseAndInsertImages(pageHTML);
-    pageContainer.innerHTML = `<div class="generated-page">${html}</div>`;
+    // Step 2: Parse structured response into HTML/CSS/JS
+    const { html: rawHtml, css, js } = parseStructuredResponse(pageHTML);
+    const { html: processedHtml, imagePrompts } = parseAndInsertImages(rawHtml);
 
-    // Step 3: Generate images in parallel
-    const limitedPrompts = imagePrompts.slice(0, state.imagesPerPage);
-    if (limitedPrompts.length > 0) {
-      await generateImages(limitedPrompts);
+    // Step 3: Render page (iframe for JS, direct DOM for CSS-only)
+    if (js.trim()) {
+      const resolved = resolveImagesForIframe(processedHtml, imagePrompts);
+      renderStructuredPage(resolved, css, js);
+    } else {
+      renderStructuredPage(processedHtml, css, '');
+      const limitedPrompts = imagePrompts.slice(0, state.imagesPerPage);
+      if (limitedPrompts.length > 0) {
+        await generateImages(limitedPrompts);
+      }
+      bindPageLinks();
     }
 
-    // Bind link clicks
-    bindPageLinks();
-
-    // Save to session history
+    // Save to session history (pack structured content for storage)
+    const packed = packPageContent(processedHtml, css, js);
     state.history = state.history.slice(0, state.historyIndex + 1);
-    state.history.push({ url: query, html: pageContainer.innerHTML });
+    state.history.push({ url: query, html: packed });
     state.historyIndex = state.history.length - 1;
     updateNavButtons();
     updateBrowserUrl(query);
 
     // Save to persistent history
-    const pageTitle = extractTitle(pageContainer.innerHTML) || query;
+    const pageTitle = extractTitle(processedHtml) || query;
     const now = Date.now();
     savePersistentHistory({
       url: query,
       title: pageTitle,
-      html: pageContainer.innerHTML,
+      html: packed,
       timestamp: now,
       model: modelSelect.value,
     });
 
     // Auto-publish to community feed and track exploration tree
-    const feedKey = await publishToFeed(storageUrl, pageTitle, pageContainer.innerHTML);
+    const feedKey = await publishToFeed(storageUrl, pageTitle, packed);
     state.currentFeedKey = feedKey;
-    await updateExplorationTree(query, pageTitle, feedKey, pageContainer.innerHTML, { parentFeedKey, explorationId, parentHtml });
+    await updateExplorationTree(query, pageTitle, feedKey, packed, { parentFeedKey, explorationId, parentHtml });
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
@@ -1973,6 +1998,140 @@ async function generateTonalModifier(url) {
   }
 }
 
+// ── Structured response parsing ──
+function parseStructuredResponse(raw) {
+  raw = raw.replace(/^```\w*\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+  const sectionRegex = /^===(\w+)===\s*$/gm;
+  const matches = [];
+  let m;
+  while ((m = sectionRegex.exec(raw)) !== null) {
+    matches.push({ name: m[1].toUpperCase(), end: m.index + m[0].length, index: m.index });
+  }
+  if (matches.length === 0) return { html: raw.trim(), css: '', js: '' };
+  const sections = {};
+  const before = raw.substring(0, matches[0].index).trim();
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].end;
+    const end = i + 1 < matches.length ? matches[i + 1].index : raw.length;
+    sections[matches[i].name] = raw.substring(start, end).trim();
+  }
+  return {
+    html: [before, sections.HTML || ''].filter(Boolean).join('\n'),
+    css: sections.CSS || '',
+    js: sections.JS || '',
+  };
+}
+
+function scopeCSS(cssText) {
+  if (!cssText.trim()) return '';
+  return cssText.replace(
+    /(^|\})\s*([^{}@/][^{]*?)\s*\{/gm,
+    (match, prefix, selectors) => {
+      const scoped = selectors.split(',').map(s => {
+        s = s.trim();
+        if (!s || /^(from|to|\d+%)$/.test(s)) return s;
+        if (s.includes('.generated-page')) return s;
+        return `.generated-page ${s}`;
+      }).join(', ');
+      return `${prefix} ${scoped} {`;
+    }
+  );
+}
+
+function packPageContent(html, css, js) {
+  if (!css && !js) return `<div class="generated-page">${html}</div>`;
+  return JSON.stringify({ _s: 1, html, css, js });
+}
+
+function unpackPageContent(stored) {
+  if (!stored) return { html: '', css: '', js: '' };
+  if (stored.startsWith('{')) {
+    try {
+      const p = JSON.parse(stored);
+      if (p._s) return { html: p.html || '', css: p.css || '', js: p.js || '' };
+    } catch {}
+  }
+  return { html: stored, css: '', js: '' };
+}
+
+function renderStructuredPage(html, css, js) {
+  let extracted = '';
+  html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, inner) => { extracted += inner + '\n'; return ''; });
+  const allCSS = scopeCSS(extracted + '\n' + css);
+  if (js.trim()) {
+    renderInIframe(html, allCSS, js);
+  } else {
+    const style = allCSS ? `<style>${allCSS}</style>` : '';
+    pageContainer.innerHTML = `<div class="generated-page">${style}${html}</div>`;
+  }
+}
+
+function renderInIframe(html, css, js) {
+  const doc = `<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+:root{--bg:#1a1a1a;--text:#e0e0e0;--accent:#e8a0bf;--border:#333;--surface:#242424;--surface2:#2a2a2a;--text-dim:#888}
+body{background:var(--bg);color:var(--text);font-family:'Ubuntu Condensed','Segoe UI',system-ui,sans-serif;line-height:1.7;padding:24px;margin:0}
+a{color:var(--accent);text-decoration:none;cursor:pointer}
+a:hover{color:#f0b8d0;border-bottom:1px solid #f0b8d0}
+img{max-width:100%;border-radius:8px;border:1px solid var(--border)}
+blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:14px 0;background:var(--surface);border-radius:0 6px 6px 0}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}th{background:var(--surface2);font-weight:600}
+code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-family:'SF Mono','Fira Code',monospace;font-size:13px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto}pre code{background:none;padding:0}
+hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+</style>
+<style>${css}</style>
+</head><body>
+${html}
+<script>
+(function(){
+  new ResizeObserver(function(){
+    window.parent.postMessage({type:'sidenet-resize',height:document.body.scrollHeight},'*');
+  }).observe(document.body);
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('a[href]');
+    if(a){e.preventDefault();window.parent.postMessage({type:'sidenet-navigate',href:a.getAttribute('href')},'*');}
+  });
+})();
+try{${js}}catch(e){console.error('[sidenet page]',e);}
+</script></body></html>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.sandbox = 'allow-scripts';
+  iframe.srcdoc = doc;
+  iframe.style.cssText = 'width:100%;border:none;min-height:400px;display:block;';
+  pageContainer.innerHTML = '';
+  pageContainer.appendChild(iframe);
+}
+
+function restorePage(stored) {
+  const { html, css, js } = unpackPageContent(stored);
+  if (css || js) {
+    renderStructuredPage(html, css, js);
+    if (!js.trim()) bindPageLinks();
+  } else {
+    pageContainer.innerHTML = html;
+    bindPageLinks();
+  }
+}
+
+function resolveImagesForIframe(html, imagePrompts) {
+  const limited = imagePrompts.slice(0, state.imagesPerPage);
+  let result = html;
+  for (const { id, prompt } of limited) {
+    const enc = encodeURIComponent(prompt);
+    const params = new URLSearchParams({ model: 'flux', width: '768', height: '512', nologo: 'true' });
+    if (state.apiKey) params.set('key', state.apiKey);
+    const url = `https://image.pollinations.ai/prompt/${enc}?${params}`;
+    result = result.replace(
+      new RegExp(`<div class="image-placeholder" id="${id}">[^<]*</div>`),
+      `<img class="page-image" alt="${escapeHtml(prompt)}" src="${url}" />`
+    );
+  }
+  return result;
+}
+
 // ── Image handling ──
 function parseAndInsertImages(html) {
   const imagePrompts = [];
@@ -2043,6 +2202,7 @@ async function generateImages(prompts) {
 
 // ── Link binding ──
 function bindPageLinks() {
+  if (pageContainer.querySelector('iframe')) return;
   const parentHtml = pageContainer.innerHTML;
   pageContainer.querySelectorAll('a[href]').forEach((link) => {
     link.addEventListener('click', (e) => {
@@ -2162,8 +2322,7 @@ function renderHistoryPanel() {
       if (entry && entry.html) {
         // Restore cached page
         addressInput.value = entry.url;
-        pageContainer.innerHTML = entry.html;
-        bindPageLinks();
+        restorePage(entry.html);
         // Push to session nav history
         state.history = state.history.slice(0, state.historyIndex + 1);
         state.history.push({ url: entry.url, html: entry.html });
@@ -2300,8 +2459,9 @@ function saveSettingsToFirebase() {
 function publishToFeed(url, title, html) {
   if (!state.firebaseReady || !firebaseDb) return Promise.resolve(null);
   const cleanHtml = html.substring(0, 40000);
+  const { html: rawForPreview } = unpackPageContent(cleanHtml);
   const tmp = document.createElement('div');
-  tmp.innerHTML = cleanHtml;
+  tmp.innerHTML = rawForPreview;
   const preview = tmp.textContent.substring(0, 200).trim();
 
   const newRef = firebaseDb.ref('feed').push();
@@ -2494,10 +2654,9 @@ function renderFeed(entries) {
         const entry = snap.val();
         if (entry && entry.html) {
           addressInput.value = entry.url;
-          pageContainer.innerHTML = entry.html;
-          bindPageLinks();
+          restorePage(entry.html);
           state.history = state.history.slice(0, state.historyIndex + 1);
-          state.history.push({ url: entry.url, html: pageContainer.innerHTML });
+          state.history.push({ url: entry.url, html: entry.html });
           state.historyIndex = state.history.length - 1;
           updateNavButtons();
           state.currentFeedKey = key;
@@ -2632,10 +2791,9 @@ function renderWelcomeFeed(entries, allEntries) {
         const entry = snap.val();
         if (entry && entry.html) {
           addressInput.value = entry.url;
-          pageContainer.innerHTML = entry.html;
-          bindPageLinks();
+          restorePage(entry.html);
           state.history = state.history.slice(0, state.historyIndex + 1);
-          state.history.push({ url: entry.url, html: pageContainer.innerHTML });
+          state.history.push({ url: entry.url, html: entry.html });
           state.historyIndex = state.history.length - 1;
           updateNavButtons();
           state.currentFeedKey = key;
@@ -2804,10 +2962,9 @@ async function loadFeedEntry(feedKey) {
     const entry = snap.val();
     if (entry && entry.html) {
       addressInput.value = entry.url;
-      pageContainer.innerHTML = entry.html;
-      bindPageLinks();
+      restorePage(entry.html);
       state.history = state.history.slice(0, state.historyIndex + 1);
-      state.history.push({ url: entry.url, html: pageContainer.innerHTML });
+      state.history.push({ url: entry.url, html: entry.html });
       state.historyIndex = state.history.length - 1;
       updateNavButtons();
       state.currentFeedKey = feedKey;
