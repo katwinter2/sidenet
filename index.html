@@ -1589,17 +1589,23 @@ resetPromptBtn.addEventListener('click', () => {
 // ── Navigation ──
 const welcomeHTML = pageContainer.innerHTML;
 
-// Browser URL integration — each page gets a unique hash URL
+// Browser URL integration — each page gets a clean /s/ path
 function updateBrowserUrl(sidenetUrl) {
   if (sidenetUrl) {
-    history.pushState({ sidenetUrl }, '', '#/' + sidenetUrl);
+    history.pushState({ sidenetUrl }, '', '/s/' + sidenetUrl);
   } else {
-    history.pushState({ sidenetUrl: null }, '', window.location.pathname);
+    history.pushState({ sidenetUrl: null }, '', '/');
   }
 }
 
 function isOnPage() {
-  return window.location.hash.length > 2; // more than just "#/"
+  return window.location.pathname.startsWith('/s/');
+}
+
+function getSidenetUrlFromPath() {
+  const path = window.location.pathname;
+  if (path.startsWith('/s/')) return path.slice(3);
+  return null;
 }
 
 function goHome() {
@@ -1620,8 +1626,8 @@ homeBtn.addEventListener('click', goHome);
 
 // Handle browser back/forward
 window.addEventListener('popstate', (e) => {
-  const popState = e.state;
-  if (!popState || !popState.sidenetUrl) {
+  const sidenetUrl = (e.state && e.state.sidenetUrl) || getSidenetUrlFromPath();
+  if (!sidenetUrl) {
     // Going back to homepage
     pageContainer.innerHTML = welcomeHTML;
     addressInput.value = '';
@@ -1636,16 +1642,14 @@ window.addEventListener('popstate', (e) => {
     updateNavButtons();
   } else {
     // Going to a page — find it in internal history
-    const url = popState.sidenetUrl;
-    addressInput.value = url;
-    // Try to find in internal history
-    const found = state.history.find(h => h.url === url);
+    addressInput.value = sidenetUrl;
+    const found = state.history.find(h => h.url === sidenetUrl);
     if (found && found.html) {
       pageContainer.innerHTML = found.html;
       bindPageLinks();
       if (!state.feedClosedByUser) toggleFeed(true);
     } else {
-      navigateTo(url);
+      navigateTo(sidenetUrl);
     }
     updateNavButtons();
   }
@@ -2173,10 +2177,10 @@ function initFirebase() {
         state.firebaseUid = user.uid;
         state.firebaseReady = true;
         await loadSettingsFromFirebase();
-        // Check for hash-based URL on initial load
-        const hashUrl = window.location.hash.replace(/^#\/?/, '');
-        if (hashUrl) {
-          navigateTo(hashUrl);
+        // Check for path-based URL on initial load (e.g. /s/some.url/path)
+        const initialUrl = getSidenetUrlFromPath();
+        if (initialUrl) {
+          navigateTo(initialUrl);
         } else {
           loadWelcomeFeed();
         }
