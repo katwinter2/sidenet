@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>surfing sidenet</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' fill='%23f0c8d8'%3E%3Cpath d='M80-40v-80h40q32 0 62-10t58-30q28 20 58 29.5t62 9.5q32 0 62.5-9.5T480-160q28 20 58 29.5t62 9.5q32 0 62.5-9.5T720-160q27 20 57.5 30t62.5 10h40v80h-40q-31 0-61-7.5T720-70q-29 15-59 22.5T600-40q-31 0-61-7.5T480-70q-29 15-59 22.5T360-40q-31 0-61-7.5T240-70q-29 15-59 22.5T120-40H80Zm260-760 222 41q14 2 27 11t22 25l35 62q26 45 72 73t102 28v80q-78 0-142-39T577-621l-90 61 153 120v154q16 11 31 23t29 23q-21 18-46 29t-54 11q-36 0-67-17t-53-43q-22 26-53 43t-67 17q-10 0-19.5-1.5T322-206q-86-59-144-119t-58-104q0-31 24-41t50-10q29 0 67 8.5t81 24.5l-21-124q-4-20 4.5-39.5T352-642l86-58q-3 0-14.5-2.5t-25.5-5-25.5-5Q361-715 358-715l-113 77-45-66 140-96Zm72 284 18 106q27 13 67 34.5t63 35.5v-60L412-516Zm268-224q-33 0-56.5-23.5T600-820q0-33 23.5-56.5T680-900q33 0 56.5 23.5T760-820q0 33-23.5 56.5T680-740Z'/%3E%3C/svg%3E" />
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -756,10 +757,12 @@
     background: var(--border);
     border-radius: 3px;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: height 0.15s ease, padding 0.15s ease;
   }
-  .feed-card:hover .scrubber-bar { opacity: 1; }
+  .scrubber-bar:hover {
+    height: 14px;
+    padding: 4px 0;
+  }
 
   .scrubber-fill {
     position: absolute; top: 0; left: 0; height: 100%;
@@ -772,14 +775,16 @@
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--accent); border: 1.5px solid var(--surface);
     transform: translate(-50%, -50%);
-    transition: transform 0.15s ease, background 0.15s ease;
+    transition: transform 0.15s ease, background 0.15s ease, width 0.15s ease, height 0.15s ease;
     pointer-events: none; z-index: 2;
   }
   .scrubber-dot.root { width: 10px; height: 10px; background: var(--accent-hover); }
+  .scrubber-bar:hover .scrubber-dot { width: 12px; height: 12px; }
+  .scrubber-bar:hover .scrubber-dot.root { width: 14px; height: 14px; }
   .scrubber-dot.active {
-    transform: translate(-50%, -50%) scale(1.5);
+    transform: translate(-50%, -50%) scale(1.4);
     background: var(--accent-hover);
-    box-shadow: 0 0 6px var(--accent-glow);
+    box-shadow: 0 0 8px var(--accent-glow);
   }
 
   .scrubber-popup {
@@ -1102,6 +1107,7 @@
   <div class="nav-buttons">
     <button class="nav-btn" id="backBtn" disabled title="Back">&#8592;</button>
     <button class="nav-btn" id="forwardBtn" disabled title="Forward">&#8594;</button>
+    <button class="nav-btn" id="homeBtn" title="Home"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="currentColor"><path d="M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z"/></svg></button>
   </div>
 
   <div class="address-bar">
@@ -1338,6 +1344,7 @@ const state = {
   currentFeedKey: null,
   currentExplorationId: null,
   tonalModifier: null,
+  feedClosedByUser: false,
 };
 
 // ── DOM refs ──
@@ -1346,6 +1353,7 @@ const addressInput = $('#addressInput');
 const goBtn = $('#goBtn');
 const backBtn = $('#backBtn');
 const forwardBtn = $('#forwardBtn');
+const homeBtn = $('#homeBtn');
 const modelSelect = $('#modelSelect');
 const settingsBtn = $('#settingsBtn');
 const settingsModal = $('#settingsModal');
@@ -1566,6 +1574,23 @@ resetPromptBtn.addEventListener('click', () => {
 });
 
 // ── Navigation ──
+const welcomeHTML = pageContainer.innerHTML;
+
+function goHome() {
+  pageContainer.innerHTML = welcomeHTML;
+  addressInput.value = '';
+  state.historyIndex = -1;
+  state.currentFeedKey = null;
+  state.currentExplorationId = null;
+  state.tonalModifier = null;
+  updateNavButtons();
+  toggleFeed(false);
+  state.feedClosedByUser = false;
+  loadWelcomeFeed();
+}
+
+homeBtn.addEventListener('click', goHome);
+
 addressInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !state.isLoading) {
     navigateTo(addressInput.value.trim());
@@ -1743,6 +1768,11 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
+
+    // Auto-open feed sidebar unless user closed it
+    if (!state.feedClosedByUser) {
+      toggleFeed(true);
+    }
 
   } catch (err) {
     pageContainer.innerHTML = `
@@ -2381,9 +2411,14 @@ function toggleFeed(forceOpen) {
   if (open) loadFeed();
 }
 
-feedBtn.addEventListener('click', () => toggleFeed());
-closeFeedBtn.addEventListener('click', () => toggleFeed(false));
-feedBackdrop.addEventListener('click', () => toggleFeed(false));
+feedBtn.addEventListener('click', () => {
+  const willClose = feedPanel.classList.contains('open');
+  if (willClose) state.feedClosedByUser = true;
+  else state.feedClosedByUser = false;
+  toggleFeed();
+});
+closeFeedBtn.addEventListener('click', () => { state.feedClosedByUser = true; toggleFeed(false); });
+feedBackdrop.addEventListener('click', () => { state.feedClosedByUser = true; toggleFeed(false); });
 refreshFeedBtn.addEventListener('click', () => loadFeed());
 
 // ── Welcome page feed (inline) ──
