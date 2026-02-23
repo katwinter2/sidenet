@@ -328,30 +328,27 @@
   }
 
   /* Welcome screen */
-  .welcome {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 70vh;
+  .welcome-header {
     text-align: center;
-    gap: 16px;
+    padding: 32px 0 24px;
   }
 
   .welcome-logo {
-    font-size: 48px;
+    font-size: 42px;
     font-weight: 800;
     background: linear-gradient(135deg, var(--accent), #ff66aa);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    margin-bottom: 8px;
   }
 
   .welcome-sub {
     color: var(--text-dim);
-    font-size: 16px;
+    font-size: 15px;
     max-width: 440px;
     line-height: 1.6;
+    margin: 0 auto;
   }
 
   .welcome-hints {
@@ -377,6 +374,47 @@
     border-color: var(--accent);
     color: var(--text);
     background: var(--surface2);
+  }
+
+  /* Welcome feed section */
+  .welcome-feed-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+  }
+
+  .welcome-feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .welcome-feed-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .welcome-feed-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+
+  .welcome-feed-list .feed-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .welcome-feed-list .feed-card:hover {
+    border-color: var(--accent);
+    background: var(--surface2);
+    transform: translateY(-1px);
   }
 
   /* Settings modal */
@@ -823,42 +861,6 @@
 
   .feed-backdrop.open { display: block; }
 
-  /* Share button on generated pages */
-  .share-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 0;
-    margin-top: 20px;
-    border-top: 1px solid var(--border);
-  }
-
-  .share-btn {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 0.15s;
-  }
-
-  .share-btn:hover {
-    color: var(--text);
-    border-color: var(--accent);
-  }
-
-  .share-btn.shared {
-    color: var(--green);
-    border-color: var(--green);
-    cursor: default;
-  }
-
-  .feed-status {
-    font-size: 11px;
-    color: var(--text-dim);
-  }
 </style>
 </head>
 <body>
@@ -911,11 +913,10 @@
 <!-- Main content -->
 <div class="content-area" id="contentArea">
   <div class="page-container" id="pageContainer">
-    <div class="welcome">
+    <div class="welcome-header">
       <div class="welcome-logo">SideNet</div>
       <p class="welcome-sub">
-        Browse the alternate internet. Type a URL or describe any page you want to visit.
-        Pages are generated with AI, complete with images and working links.
+        Browse the alternate internet. Type a URL or describe any page to visit.
       </p>
       <div class="welcome-hints">
         <div class="hint-chip" onclick="navigateTo('en.wikipedia.alt/wiki/The_Great_Martian_Canal_System')">wikipedia.alt/Martian Canals</div>
@@ -923,6 +924,15 @@
         <div class="hint-chip" onclick="navigateTo('recipes.alt/interdimensional-cooking/phase-shifted-pasta')">Interdimensional Recipes</div>
         <div class="hint-chip" onclick="navigateTo('shop.parallel/products/gravity-boots-pro')">Gravity Boots Store</div>
         <div class="hint-chip" onclick="navigateTo('A forum discussing the best places to visit in the dream world')">Dream Travel Forum</div>
+      </div>
+    </div>
+    <div class="welcome-feed-section">
+      <div class="welcome-feed-header">
+        <h3>Recently Created by the Community</h3>
+        <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
+      </div>
+      <div class="welcome-feed-list" id="welcomeFeedList">
+        <div class="feed-empty">Loading community feed...</div>
       </div>
     </div>
   </div>
@@ -989,14 +999,6 @@
       <input type="text" id="displayNameInput" placeholder="Anonymous" style="font-family:inherit" />
       <div class="form-hint">Shown when you share pages to the feed</div>
     </div>
-    <div class="form-group">
-      <label>Firebase Config (JSON)</label>
-      <textarea id="firebaseConfigInput" rows="4" placeholder='{"apiKey":"...","databaseURL":"...","projectId":"..."}' style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:12px;outline:none;font-family:'SF Mono','Fira Code',monospace;resize:vertical"></textarea>
-      <div class="form-hint">
-        Paste your Firebase Realtime Database config to enable the community feed.
-        <a href="https://console.firebase.google.com" target="_blank" style="color:var(--accent)">Create a project</a> with Realtime Database (test mode rules).
-      </div>
-    </div>
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelSettings">Cancel</button>
       <button class="btn-primary" id="saveSettings">Save</button>
@@ -1006,16 +1008,25 @@
 
 <script>
 // ── State ──
+// ── Hardcoded Firebase config ──
+const FIREBASE_CONFIG = {
+  apiKey: "__FIREBASE_API_KEY__",
+  authDomain: "__FIREBASE_AUTH_DOMAIN__",
+  databaseURL: "__FIREBASE_DATABASE_URL__",
+  projectId: "sidenet-61c6d",
+  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+  appId: "1:__FIREBASE_MESSAGING_SENDER_ID__:web:82aa4199ba940a05db5c6f",
+};
+
 const state = {
   apiKey: localStorage.getItem('sidenet_apiKey') || '',
   imagesPerPage: parseInt(localStorage.getItem('sidenet_imagesPerPage') || '2'),
   displayName: localStorage.getItem('sidenet_displayName') || '',
-  firebaseConfig: localStorage.getItem('sidenet_firebaseConfig') || '',
   history: [],
   historyIndex: -1,
   isLoading: false,
   firebaseReady: false,
-  currentPageUrl: null,
 };
 
 // ── DOM refs ──
@@ -1048,15 +1059,15 @@ const feedList = $('#feedList');
 const refreshFeedBtn = $('#refreshFeedBtn');
 const closeFeedBtn = $('#closeFeedBtn');
 const displayNameInput = $('#displayNameInput');
-const firebaseConfigInput = $('#firebaseConfigInput');
+const welcomeFeedList = $('#welcomeFeedList');
 
 // ── Init ──
 updateStatusBar();
 apiKeyInput.value = state.apiKey;
 imagesPerPageInput.value = state.imagesPerPage;
 displayNameInput.value = state.displayName;
-firebaseConfigInput.value = state.firebaseConfig;
 initFirebase();
+loadWelcomeFeed();
 
 // ── Settings ──
 settingsBtn.addEventListener('click', () => {
@@ -1064,7 +1075,6 @@ settingsBtn.addEventListener('click', () => {
   apiKeyInput.value = state.apiKey;
   imagesPerPageInput.value = state.imagesPerPage;
   displayNameInput.value = state.displayName;
-  firebaseConfigInput.value = state.firebaseConfig;
 });
 
 cancelSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
@@ -1077,16 +1087,11 @@ saveSettingsBtn.addEventListener('click', () => {
   state.apiKey = apiKeyInput.value.trim();
   state.imagesPerPage = Math.min(3, Math.max(1, parseInt(imagesPerPageInput.value) || 2));
   state.displayName = displayNameInput.value.trim();
-  const newFirebaseConfig = firebaseConfigInput.value.trim();
-  const firebaseChanged = newFirebaseConfig !== state.firebaseConfig;
-  state.firebaseConfig = newFirebaseConfig;
   localStorage.setItem('sidenet_apiKey', state.apiKey);
   localStorage.setItem('sidenet_imagesPerPage', state.imagesPerPage);
   localStorage.setItem('sidenet_displayName', state.displayName);
-  localStorage.setItem('sidenet_firebaseConfig', state.firebaseConfig);
   settingsModal.classList.remove('open');
   updateStatusBar();
-  if (firebaseChanged) initFirebase();
 });
 
 function updateStatusBar() {
@@ -1171,10 +1176,8 @@ async function navigateTo(query) {
       await generateImages(limitedPrompts);
     }
 
-    // Bind link clicks and add share bar
+    // Bind link clicks
     bindPageLinks();
-    state.currentPageUrl = query;
-    injectShareBar(query);
 
     // Save to session history
     state.history = state.history.slice(0, state.historyIndex + 1);
@@ -1183,13 +1186,18 @@ async function navigateTo(query) {
     updateNavButtons();
 
     // Save to persistent history
+    const pageTitle = extractTitle(pageContainer.innerHTML) || query;
+    const now = Date.now();
     savePersistentHistory({
       url: query,
-      title: extractTitle(pageContainer.innerHTML) || query,
+      title: pageTitle,
       html: pageContainer.innerHTML,
-      timestamp: Date.now(),
+      timestamp: now,
       model: modelSelect.value,
     });
+
+    // Auto-publish to community feed (fire and forget)
+    publishToFeed(query, pageTitle, pageContainer.innerHTML);
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
@@ -1488,46 +1496,26 @@ clearHistoryBtn.addEventListener('click', () => {
 let firebaseDb = null;
 
 function initFirebase() {
-  if (!state.firebaseConfig) {
-    state.firebaseReady = false;
-    return;
-  }
   try {
-    const config = JSON.parse(state.firebaseConfig);
-    // Delete existing app if re-initializing
-    if (firebase.apps.length) {
-      firebase.app().delete().then(() => startFirebase(config));
-    } else {
-      startFirebase(config);
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
     }
-  } catch {
-    state.firebaseReady = false;
-  }
-}
-
-function startFirebase(config) {
-  try {
-    firebase.initializeApp(config);
     firebaseDb = firebase.database();
     state.firebaseReady = true;
-  } catch {
+  } catch (err) {
+    console.error('Firebase init failed:', err);
     state.firebaseReady = false;
   }
 }
 
-async function shareToFeed(url, title, html) {
-  if (!state.firebaseReady || !firebaseDb) {
-    alert('Community feed not configured. Add your Firebase config in Settings.');
-    return;
-  }
-  // Strip large image src attributes to save space, keep the structure
+function publishToFeed(url, title, html) {
+  if (!state.firebaseReady || !firebaseDb) return;
   const cleanHtml = html.substring(0, 40000);
-  // Extract a text preview
   const tmp = document.createElement('div');
   tmp.innerHTML = cleanHtml;
   const preview = tmp.textContent.substring(0, 200).trim();
 
-  const entry = {
+  firebaseDb.ref('feed').push({
     url,
     title: title || url,
     preview,
@@ -1535,15 +1523,7 @@ async function shareToFeed(url, title, html) {
     author: state.displayName || 'Anonymous',
     model: modelSelect.value,
     timestamp: Date.now(),
-  };
-
-  try {
-    await firebaseDb.ref('feed').push(entry);
-    return true;
-  } catch (err) {
-    alert('Failed to share: ' + err.message);
-    return false;
-  }
+  }).catch(() => {}); // silent fail
 }
 
 async function loadFeed() {
@@ -1611,8 +1591,6 @@ function renderFeed(entries) {
           addressInput.value = entry.url;
           pageContainer.innerHTML = entry.html;
           bindPageLinks();
-          injectShareBar(entry.url);
-          state.currentPageUrl = entry.url;
           state.history = state.history.slice(0, state.historyIndex + 1);
           state.history.push({ url: entry.url, html: pageContainer.innerHTML });
           state.historyIndex = state.history.length - 1;
@@ -1655,43 +1633,85 @@ closeFeedBtn.addEventListener('click', () => toggleFeed(false));
 feedBackdrop.addEventListener('click', () => toggleFeed(false));
 refreshFeedBtn.addEventListener('click', () => loadFeed());
 
-// ── Share bar injection ──
-function injectShareBar(url) {
-  // Remove any existing share bar
-  const existing = pageContainer.querySelector('.share-bar');
-  if (existing) existing.remove();
-
-  const bar = document.createElement('div');
-  bar.className = 'share-bar';
-  bar.innerHTML = `
-    <button class="share-btn" id="sharePageBtn">Share to Community Feed</button>
-    <span class="feed-status" id="shareStatus"></span>
-  `;
-  // Append inside the generated-page div, or at the end of pageContainer
-  const page = pageContainer.querySelector('.generated-page');
-  if (page) {
-    page.appendChild(bar);
-  } else {
-    pageContainer.appendChild(bar);
+// ── Welcome page feed (inline) ──
+async function loadWelcomeFeed() {
+  if (!welcomeFeedList) return;
+  if (!state.firebaseReady || !firebaseDb) {
+    welcomeFeedList.innerHTML = '<div class="feed-empty">Connecting to community feed...</div>';
+    // Retry after a short delay in case Firebase is still initializing
+    setTimeout(() => {
+      if (state.firebaseReady) loadWelcomeFeed();
+    }, 1000);
+    return;
   }
+  welcomeFeedList.innerHTML = '<div class="feed-empty">Loading community feed...</div>';
+  try {
+    const snap = await firebaseDb.ref('feed')
+      .orderByChild('timestamp')
+      .limitToLast(30)
+      .once('value');
+    const entries = [];
+    snap.forEach(child => {
+      entries.push({ key: child.key, ...child.val() });
+    });
+    entries.reverse();
+    renderWelcomeFeed(entries);
+  } catch (err) {
+    welcomeFeedList.innerHTML = `<div class="feed-empty">Could not load feed: ${escapeHtml(err.message)}</div>`;
+  }
+}
 
-  const shareBtn = bar.querySelector('#sharePageBtn');
-  const shareStatusEl = bar.querySelector('#shareStatus');
-  shareBtn.addEventListener('click', async () => {
-    if (shareBtn.classList.contains('shared')) return;
-    shareBtn.textContent = 'Sharing...';
-    shareBtn.disabled = true;
-    const title = extractTitle(pageContainer.innerHTML) || url;
-    const html = pageContainer.innerHTML;
-    const ok = await shareToFeed(url, title, html);
-    if (ok) {
-      shareBtn.textContent = 'Shared!';
-      shareBtn.classList.add('shared');
-      shareStatusEl.textContent = 'Visible in the community feed';
-    } else {
-      shareBtn.textContent = 'Share to Community Feed';
-      shareBtn.disabled = false;
-    }
+function renderWelcomeFeed(entries) {
+  if (!welcomeFeedList) return;
+  if (entries.length === 0) {
+    welcomeFeedList.innerHTML = '<div class="feed-empty">No pages yet. Generate something and it\'ll appear here!</div>';
+    return;
+  }
+  let html = '';
+  for (const entry of entries) {
+    const title = escapeHtml(entry.title || entry.url);
+    const url = escapeHtml(entry.url);
+    const preview = escapeHtml(entry.preview || '');
+    const author = escapeHtml(entry.author || 'Anonymous');
+    const model = escapeHtml(entry.model || '?');
+    const ago = timeAgo(entry.timestamp);
+    html += `
+      <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}">
+        <div class="feed-card-title">${title}</div>
+        <div class="feed-card-url">side://${url}</div>
+        <div class="feed-card-preview">${preview}</div>
+        <div class="feed-card-meta">
+          <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
+          <span class="feed-card-model">${model}</span>
+        </div>
+      </div>`;
+  }
+  welcomeFeedList.innerHTML = html;
+
+  // Bind card clicks
+  welcomeFeedList.querySelectorAll('.feed-card').forEach(card => {
+    card.addEventListener('click', async () => {
+      const key = card.dataset.feedKey;
+      try {
+        const snap = await firebaseDb.ref('feed/' + key).once('value');
+        const entry = snap.val();
+        if (entry && entry.html) {
+          addressInput.value = entry.url;
+          pageContainer.innerHTML = entry.html;
+          bindPageLinks();
+          state.history = state.history.slice(0, state.historyIndex + 1);
+          state.history.push({ url: entry.url, html: pageContainer.innerHTML });
+          state.historyIndex = state.history.length - 1;
+          updateNavButtons();
+          $('#contentArea').scrollTop = 0;
+        } else {
+          navigateTo(entry.url);
+        }
+      } catch {
+        const url = card.querySelector('.feed-card-url').textContent.replace('side://', '');
+        navigateTo(url);
+      }
+    });
   });
 }
 
