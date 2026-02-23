@@ -757,11 +757,13 @@
     background: var(--border);
     border-radius: 3px;
     cursor: pointer;
-    transition: height 0.15s ease, padding 0.15s ease;
   }
-  .scrubber-bar:hover {
-    height: 14px;
-    padding: 4px 0;
+  .scrubber-bar::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: -10px; bottom: -10px;
+    z-index: 1;
   }
 
   .scrubber-fill {
