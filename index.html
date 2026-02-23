@@ -784,7 +784,7 @@
     transform: translateX(-50%);
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 8px 12px;
-    min-width: 160px; max-width: 280px;
+    min-width: 200px; max-width: 320px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
     pointer-events: none; opacity: 0;
     transition: opacity 0.15s ease; z-index: 10; font-size: 12px;
@@ -802,8 +802,8 @@
   .scrubber-concept-tag { background: var(--bg); color: var(--text-dim); padding: 2px 6px; border-radius: 4px; font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scrubber-popup-diff { margin-top: 4px; font-size: 10px; color: var(--text-dim); }
   .scrubber-popup-diff .diff-count { color: var(--green); font-weight: 500; }
-  .scrubber-popup-thumb { margin-bottom: 6px; border-radius: 4px; overflow: hidden; background: var(--bg); }
-  .scrubber-popup-thumb img { width: 100%; height: auto; max-height: 120px; object-fit: cover; display: block; border-radius: 4px; }
+  .scrubber-popup-thumb { margin: -8px -12px 8px -12px; border-radius: 6px 6px 0 0; overflow: hidden; background: var(--bg); }
+  .scrubber-popup-thumb img { width: 100%; height: auto; max-height: 180px; object-fit: cover; object-position: top; display: block; image-rendering: auto; }
 
   /* History panel */
   .history-panel {
@@ -1082,20 +1082,6 @@
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 10px;
-  }
-  .feed-card-thumb {
-    margin: -14px -16px 10px -16px;
-    border-radius: 10px 10px 0 0;
-    overflow: hidden;
-    background: var(--bg);
-    max-height: 140px;
-  }
-  .feed-card-thumb img {
-    width: 100%;
-    height: auto;
-    max-height: 140px;
-    object-fit: cover;
-    display: block;
   }
 
   .feed-backdrop {
@@ -2575,31 +2561,34 @@ function publishToFeed(url, title, html) {
 
 // ── Screenshot capture ──
 
+function canvasToCompactDataUrl(canvas, maxBytes) {
+  // Try progressive quality reduction to fit within size limit
+  for (const q of [0.7, 0.55, 0.4, 0.25]) {
+    const dataUrl = canvas.toDataURL('image/jpeg', q);
+    if (dataUrl.length <= maxBytes) return dataUrl;
+  }
+  return null;
+}
+
 async function captureAndUploadScreenshot(feedKey) {
   if (!firebaseDb || !feedKey) return null;
   try {
     const target = pageContainer.querySelector('.generated-page');
     if (!target) return null;
     await new Promise(r => setTimeout(r, 500));
+    const captureWidth = Math.min(target.scrollWidth, 900);
+    const captureHeight = Math.min(target.scrollHeight, 900);
     const canvas = await html2canvas(target, {
       backgroundColor: '#1a1a1a',
-      scale: 0.35,
-      width: target.scrollWidth,
-      height: Math.min(target.scrollHeight, 700),
+      scale: 0.6,
+      width: captureWidth,
+      height: captureHeight,
       logging: false,
       useCORS: true,
       allowTaint: true,
     });
-    // Convert to small base64 JPEG and store directly in Realtime DB
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
-    if (dataUrl.length < 200) return null; // too small = blank
-    if (dataUrl.length > 80000) {
-      // Re-render at even lower quality if too large for RTDB
-      const dataUrl2 = canvas.toDataURL('image/jpeg', 0.25);
-      if (dataUrl2.length > 80000) return null;
-      await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl2);
-      return dataUrl2;
-    }
+    const dataUrl = canvasToCompactDataUrl(canvas, 120000);
+    if (!dataUrl || dataUrl.length < 200) return null;
     await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
     return dataUrl;
   } catch (err) {
@@ -2613,7 +2602,7 @@ async function captureHtmlAsScreenshot(html, css, feedKey) {
   try {
     const offscreen = document.createElement('div');
     offscreen.className = 'generated-page';
-    offscreen.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;overflow:hidden;';
+    offscreen.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:900px;overflow:hidden;';
     if (css) {
       const style = document.createElement('style');
       style.textContent = css;
@@ -2626,20 +2615,14 @@ async function captureHtmlAsScreenshot(html, css, feedKey) {
     await new Promise(r => setTimeout(r, 200));
     const canvas = await html2canvas(offscreen, {
       backgroundColor: '#1a1a1a',
-      scale: 0.35,
-      width: 800,
-      height: Math.min(offscreen.scrollHeight, 700),
+      scale: 0.6,
+      width: 900,
+      height: Math.min(offscreen.scrollHeight, 900),
       logging: false,
     });
     document.body.removeChild(offscreen);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
-    if (dataUrl.length < 200) return null;
-    if (dataUrl.length > 80000) {
-      const dataUrl2 = canvas.toDataURL('image/jpeg', 0.25);
-      if (dataUrl2.length > 80000) return null;
-      await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl2);
-      return dataUrl2;
-    }
+    const dataUrl = canvasToCompactDataUrl(canvas, 120000);
+    if (!dataUrl || dataUrl.length < 200) return null;
     await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
     return dataUrl;
   } catch (err) {
@@ -2816,10 +2799,8 @@ function renderFeed(entries) {
     const author = escapeHtml(entry.author || 'Anonymous');
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
-    const thumb = entry.screenshotUrl ? `<div class="feed-card-thumb"><img src="${escapeHtml(entry.screenshotUrl)}" alt="" loading="lazy" /></div>` : '';
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
-        ${thumb}
         <div class="feed-card-title">${title}</div>
         <div class="feed-card-url">s/${url}</div>
         <div class="feed-card-preview">${preview}</div>
@@ -2962,10 +2943,8 @@ function renderWelcomeFeed(entries, allEntries) {
     const author = escapeHtml(entry.author || 'Anonymous');
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
-    const thumb = entry.screenshotUrl ? `<div class="feed-card-thumb"><img src="${escapeHtml(entry.screenshotUrl)}" alt="" loading="lazy" /></div>` : '';
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
-        ${thumb}
         <div class="feed-card-title">${title}</div>
         <div class="feed-card-url">s/${url}</div>
         <div class="feed-card-preview">${preview}</div>
@@ -3086,7 +3065,7 @@ function handleScrubberMove(bar, clientX) {
 
   // Horizontal clamp so popup doesn't overflow card edges
   const barWidth = rect.width;
-  const popupWidth = 160;
+  const popupWidth = 200;
   const dotPx = (nearest.pct / 100) * barWidth;
   const halfPopup = popupWidth / 2;
   if (dotPx < halfPopup) {
@@ -3229,12 +3208,31 @@ function fetchAndBuildScrubber(card, allEntries) {
       firebaseDb.ref('explorations/' + explorationId).once('value')
         .then(snap => {
           const data = snap.val();
-          if (data && data.nodes && Object.keys(data.nodes).length > 1) {
+          if (data && data.nodes) {
             scrubberCache.set(cacheKey, { data, at: Date.now() });
             buildScrubber(card, data);
           }
         })
         .catch(() => {});
+      return;
+    }
+    // Build single-dot scrubber from the one entry we have
+    if (related.length === 1) {
+      const entry = related[0];
+      const treeData = {
+        rootUrl: entry.url,
+        nodes: { [entry.key]: {
+          url: (entry.url || '').toLowerCase(),
+          title: entry.title || entry.url,
+          parentNodeId: null,
+          feedKey: entry.key,
+          timestamp: entry.timestamp || 0,
+          screenshotUrl: entry.screenshotUrl || null,
+          diffSize: 0, concepts: [],
+        }}
+      };
+      scrubberCache.set(cacheKey, { data: treeData, at: Date.now() });
+      buildScrubber(card, treeData);
     }
     return;
   }
@@ -3261,6 +3259,7 @@ function fetchAndBuildScrubber(card, allEntries) {
       parentNodeId: parentNodeId,
       feedKey: entry.key,
       timestamp: entry.timestamp || 0,
+      screenshotUrl: entry.screenshotUrl || null,
       diffSize: 0,
       concepts: [],
     };
