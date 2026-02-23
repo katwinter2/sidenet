@@ -3,7 +3,7 @@
     "feed": {
       ".read": true,
       ".write": true,
-      ".indexOn": ["timestamp"]
+      ".indexOn": ["timestamp", "url"]
     },
     "users": {
       "$uid": {

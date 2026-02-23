@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SideNet - Alternate Internet Browser</title>
+<title>sidenet</title>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
   :root {
-    --bg: #0a0a0f;
-    --surface: #12121a;
-    --surface2: #1a1a26;
-    --border: #2a2a3a;
-    --text: #e0e0e8;
-    --text-dim: #8888a0;
-    --accent: #7c5cfc;
-    --accent-glow: #7c5cfc44;
-    --accent-hover: #9178ff;
+    --bg: #1a1a1a;
+    --surface: #242428;
+    --surface2: #2c2c32;
+    --border: #3a3a42;
+    --text: #f0f0f2;
+    --text-dim: #9090a0;
+    --accent: #f0c8d8;
+    --accent-glow: #f0c8d840;
+    --accent-hover: #f5a0c0;
     --danger: #ff4466;
     --green: #44dd88;
   }
@@ -115,7 +115,7 @@
   .go-btn {
     background: var(--accent);
     border: none;
-    color: white;
+    color: #1a1a1a;
     height: 36px;
     padding: 0 16px;
     border-radius: 8px;
@@ -145,7 +145,7 @@
     font-size: 12px;
     cursor: pointer;
     outline: none;
-    max-width: 160px;
+    max-width: 280px;
   }
 
   .model-select:focus { border-color: var(--accent); }
@@ -337,7 +337,7 @@
   .welcome-logo {
     font-size: 42px;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--accent), #ff66aa);
+    background: linear-gradient(135deg, var(--accent), #e8a0b8);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -500,7 +500,7 @@
   .btn-primary {
     background: var(--accent);
     border: none;
-    color: white;
+    color: #1a1a1a;
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -697,33 +697,45 @@
   }
   .content-area::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-  /* Status bar */
-  .status-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 12px;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    font-size: 11px;
-    color: var(--text-dim);
-    flex-shrink: 0;
+  /* Connection indicator dot */
+  .settings-btn-wrapper {
+    position: relative;
+    display: inline-flex;
   }
 
-  .api-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .status-dot {
-    width: 6px;
-    height: 6px;
+  .connection-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--danger);
+    border: 2px solid var(--surface);
+    z-index: 1;
   }
 
-  .status-dot.connected { background: var(--green); }
+  .connection-dot.connected { background: var(--green); }
+
+  .connection-dot-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 200;
+    pointer-events: none;
+  }
+
+  .settings-btn-wrapper:hover .connection-dot:not(.connected) ~ .connection-dot-tooltip {
+    display: block;
+  }
 
   /* History panel */
   .history-panel {
@@ -1024,7 +1036,7 @@
   </div>
 
   <div class="address-bar">
-    <span class="address-prefix">side://</span>
+    <span class="address-prefix">sidenet://</span>
     <input
       type="text"
       class="address-input"
@@ -1039,25 +1051,28 @@
   <div class="toolbar-right">
     <select class="model-select" id="modelSelect">
       <optgroup label="Free Models">
-        <option value="openai">GPT-5 Mini (default)</option>
-        <option value="openai-fast">GPT-5 Nano (fast)</option>
-        <option value="gemini-fast">Gemini 2.5 Flash Lite</option>
-        <option value="claude-fast">Claude Haiku 4.5</option>
-        <option value="mistral">Mistral Small 3.2</option>
-        <option value="deepseek">DeepSeek V3.2</option>
-        <option value="qwen-coder">Qwen3 Coder 30B</option>
-        <option value="nova-fast">Nova Micro (fastest)</option>
+        <option value="nova-fast">Nova Micro — fastest, lightweight (22.2K/p)</option>
+        <option value="mistral">Mistral Small 3.2 — compact, reliable (4.3K/p)</option>
+        <option value="gemini-fast">Gemini 2.5 Flash — quick, balanced (3.1K/p)</option>
+        <option value="qwen-coder">Qwen3 Coder 30B — code, technical (1.2K/p)</option>
+        <option value="openai-fast">GPT-5 Nano — fast, versatile (950/p)</option>
+        <option value="openai" selected>GPT-5 Mini — solid default (700/p)</option>
+        <option value="claude-fast">Claude Haiku 4.5 — smart, concise (95/p)</option>
       </optgroup>
       <optgroup label="Paid Models (requires Pollen)">
-        <option value="claude">Claude Sonnet 4.5</option>
-        <option value="openai-large">GPT-5.2</option>
-        <option value="gemini">Gemini 3 Flash</option>
-        <option value="grok">Grok 4 Fast</option>
+        <option value="openai-large">GPT-5.2 — powerful, detailed (90/p)</option>
+        <option value="gemini">Gemini 3 Flash — fast, premium (85/p)</option>
+        <option value="grok">Grok 4 Fast — creative, bold (550/p)</option>
+        <option value="claude">Claude Sonnet 4.5 — best quality (25/p)</option>
       </optgroup>
     </select>
     <button class="settings-btn" id="feedBtn" title="Community Feed">&#9733;</button>
     <button class="settings-btn" id="historyBtn" title="History">&#9776;</button>
-    <button class="settings-btn" id="settingsBtn" title="Settings">&#9881;</button>
+    <div class="settings-btn-wrapper">
+      <button class="settings-btn" id="settingsBtn" title="Settings">&#9881;</button>
+      <div class="connection-dot" id="connectionDot"></div>
+      <div class="connection-dot-tooltip">Get a free key at enter.pollinations.ai &rarr; paste in Settings</div>
+    </div>
   </div>
 </div>
 
@@ -1065,10 +1080,8 @@
 <div class="content-area" id="contentArea">
   <div class="page-container" id="pageContainer">
     <div class="welcome-header">
-      <div class="welcome-logo">SideNet</div>
-      <p class="welcome-sub">
-        Browse the alternate internet. Type a URL or describe any page to visit.
-      </p>
+      <div class="welcome-logo">sidenet</div>
+      <p class="welcome-sub">Surf the sidenet.</p>
       <div class="welcome-hints">
         <div class="hint-chip" onclick="navigateTo('en.wikipedia.alt/wiki/The_Great_Martian_Canal_System')">wikipedia.alt/Martian Canals</div>
         <div class="hint-chip" onclick="navigateTo('news.alternate/2099/quantum-internet-goes-live')">Future News</div>
@@ -1079,7 +1092,7 @@
     </div>
     <div class="welcome-feed-section">
       <div class="welcome-feed-header">
-        <h3>Recently Created by the Community</h3>
+        <h3>Today's Catch</h3>
         <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
       </div>
       <div class="welcome-feed-list" id="welcomeFeedList">
@@ -1087,15 +1100,6 @@
       </div>
     </div>
   </div>
-</div>
-
-<!-- Status bar -->
-<div class="status-bar">
-  <div class="api-status">
-    <div class="status-dot" id="statusDot"></div>
-    <span id="statusText">No API key set</span>
-  </div>
-  <span id="modelStatus">Model: openai</span>
 </div>
 
 <!-- Feed panel -->
@@ -1137,6 +1141,9 @@
       <input type="password" id="apiKeyInput" placeholder="pk_... or sk_..." />
       <div class="form-hint">
         Optional for free models. Get a key at <a href="https://enter.pollinations.ai" target="_blank" style="color:var(--accent)">enter.pollinations.ai</a>
+      </div>
+      <div id="balanceDisplay" style="margin-top:6px;font-size:13px;color:var(--green);display:none">
+        <span id="balanceAmount"></span>
       </div>
     </div>
     <div class="form-group">
@@ -1199,6 +1206,20 @@
   </div>
 </div>
 
+<!-- Duplicate URL modal -->
+<div class="modal-overlay" id="duplicateModal">
+  <div class="modal" style="width:380px;text-align:center">
+    <h2 style="font-size:16px;margin-bottom:12px">Page Already Exists</h2>
+    <p style="color:var(--text-dim);font-size:14px;margin-bottom:20px;line-height:1.6">
+      A page like this has already been unearthed. Explore there instead?
+    </p>
+    <div class="modal-actions" style="justify-content:center">
+      <button class="btn-secondary" id="duplicateNo">No, generate new</button>
+      <button class="btn-primary" id="duplicateYes">Yes, take me there</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ──
 // ── Hardcoded Firebase config ──
@@ -1212,15 +1233,15 @@ const FIREBASE_CONFIG = {
   appId: "1:__FIREBASE_MESSAGING_SENDER_ID__:web:82aa4199ba940a05db5c6f",
 };
 
-const DEFAULT_SYSTEM_PROMPT = `You are SideNet, an AI that generates creative, detailed HTML pages for an alternate-reality internet browser.
+const DEFAULT_SYSTEM_PROMPT = `You are sidenet, an AI that generates creative, detailed HTML pages for an alternate-reality internet browser.
 
 RULES:
 - Output ONLY raw HTML content (no \`\`\`html blocks, no markdown, no explanations)
 - Use semantic HTML: h1, h2, h3, p, ul, ol, blockquote, table, pre, code, hr, etc.
 - Include 1-3 images using this EXACT format: <img data-ai-prompt="detailed image description here" alt="description" />
-- Include 3-6 hyperlinks using this format: <a href="side://some-url-path">Link Text</a>
+- Include 3-6 hyperlinks using this format: <a href="sidenet://some-url-path">Link Text</a>
   - Links should point to related pages on this alternate internet
-  - Use creative, plausible URLs like side://en.wikipedia.alt/wiki/Topic or side://news.alt/article-slug
+  - Use creative, plausible URLs like sidenet://en.wikipedia.alt/wiki/Topic or sidenet://news.alt/article-slug
 - Make the content creative, detailed, internally consistent, and immersive
 - Pages should feel like real websites from a parallel universe - wikis, shops, forums, news sites, blogs, documentation, etc.
 - Be inventive with alternate history, science, culture, and technology
@@ -1234,7 +1255,7 @@ const state = {
   temperature: parseFloat(localStorage.getItem('sidenet_temperature') || '0.85'),
   activePromptId: localStorage.getItem('sidenet_activePromptId') || 'default',
   systemPromptPresets: JSON.parse(localStorage.getItem('sidenet_systemPromptPresets') || 'null') || {
-    default: { name: 'Default SideNet', prompt: DEFAULT_SYSTEM_PROMPT }
+    default: { name: 'Default sidenet', prompt: DEFAULT_SYSTEM_PROMPT }
   },
   history: [],
   historyIndex: -1,
@@ -1258,9 +1279,7 @@ const imagesPerPageInput = $('#imagesPerPage');
 const saveSettingsBtn = $('#saveSettings');
 const cancelSettingsBtn = $('#cancelSettings');
 const pageContainer = $('#pageContainer');
-const statusDot = $('#statusDot');
-const statusText = $('#statusText');
-const modelStatus = $('#modelStatus');
+const connectionDot = $('#connectionDot');
 const historyBtn = $('#historyBtn');
 const historyPanel = $('#historyPanel');
 const historyBackdrop = $('#historyBackdrop');
@@ -1309,6 +1328,7 @@ settingsBtn.addEventListener('click', () => {
   temperatureSlider.value = state.temperature;
   temperatureValue.textContent = state.temperature.toFixed(2);
   populatePromptPresetSelect();
+  fetchBalance();
 });
 
 cancelSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
@@ -1338,18 +1358,42 @@ saveSettingsBtn.addEventListener('click', () => {
 });
 
 function updateStatusBar() {
+  if (!connectionDot) return;
   if (state.apiKey) {
-    statusDot.classList.add('connected');
-    const keyPreview = state.apiKey.substring(0, 5) + '...';
-    statusText.textContent = `Key: ${keyPreview}`;
+    connectionDot.classList.add('connected');
   } else {
-    statusDot.classList.remove('connected');
-    statusText.textContent = 'No API key (using free tier)';
+    connectionDot.classList.remove('connected');
   }
-  modelStatus.textContent = `Model: ${modelSelect.value}`;
 }
 
-modelSelect.addEventListener('change', updateStatusBar);
+const POLLEN_PER_RESPONSE = {
+  'nova-fast': 22200, 'mistral': 4300, 'gemini-fast': 3100,
+  'qwen-coder': 1200, 'openai-fast': 950, 'openai': 700,
+  'grok': 550, 'claude-fast': 95, 'openai-large': 90,
+  'gemini': 85, 'claude': 25,
+};
+
+async function fetchBalance() {
+  const el = document.getElementById('balanceDisplay');
+  const amt = document.getElementById('balanceAmount');
+  if (!el || !amt) return;
+  if (!state.apiKey) { el.style.display = 'none'; return; }
+  try {
+    const resp = await fetch('https://gen.pollinations.ai/account/balance', {
+      headers: { 'Authorization': `Bearer ${state.apiKey}` }
+    });
+    if (!resp.ok) throw new Error('Failed');
+    const data = await resp.json();
+    const balance = typeof data === 'number' ? data : (data.balance ?? data);
+    const model = modelSelect.value;
+    const rate = POLLEN_PER_RESPONSE[model];
+    const estGen = rate ? `~${Math.floor(balance * rate).toLocaleString()} pages on ${modelSelect.options[modelSelect.selectedIndex].text.split(' — ')[0]}` : '';
+    amt.textContent = `${Number(balance).toFixed(2)} pollen${estGen ? ' · ' + estGen : ''}`;
+    el.style.display = 'block';
+  } catch {
+    el.style.display = 'none';
+  }
+}
 
 // ── System Prompt Presets ──
 function populatePromptPresetSelect() {
@@ -1435,7 +1479,7 @@ deletePromptBtn.addEventListener('click', () => {
 
 resetPromptBtn.addEventListener('click', () => {
   promptTextarea.value = DEFAULT_SYSTEM_PROMPT;
-  promptNameInput.value = 'Default SideNet';
+  promptNameInput.value = 'Default sidenet';
 });
 
 // ── Navigation ──
@@ -1476,9 +1520,70 @@ function updateNavButtons() {
   forwardBtn.disabled = state.historyIndex >= state.history.length - 1;
 }
 
+// ── Duplicate URL detection ──
+function checkDuplicateUrl(query) {
+  return new Promise((resolve) => {
+    if (!state.firebaseReady || !firebaseDb) { resolve(null); return; }
+    firebaseDb.ref('feed')
+      .orderByChild('url')
+      .equalTo(query.toLowerCase())
+      .once('value')
+      .then(snap => {
+        if (snap.exists()) {
+          const entries = [];
+          snap.forEach(child => entries.push({ key: child.key, ...child.val() }));
+          entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          resolve(entries[0]);
+        } else {
+          resolve(null);
+        }
+      })
+      .catch(() => resolve(null));
+  });
+}
+
+function showDuplicateModal() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('duplicateModal');
+    const yesBtn = document.getElementById('duplicateYes');
+    const noBtn = document.getElementById('duplicateNo');
+    modal.classList.add('open');
+    function cleanup() {
+      modal.classList.remove('open');
+      yesBtn.removeEventListener('click', onYes);
+      noBtn.removeEventListener('click', onNo);
+      modal.removeEventListener('click', onBackdrop);
+    }
+    function onYes() { cleanup(); resolve('existing'); }
+    function onNo() { cleanup(); resolve('generate'); }
+    function onBackdrop(e) { if (e.target === modal) { cleanup(); resolve('generate'); } }
+    yesBtn.addEventListener('click', onYes);
+    noBtn.addEventListener('click', onNo);
+    modal.addEventListener('click', onBackdrop);
+  });
+}
+
 // ── Main page generation ──
 async function navigateTo(query) {
   if (!query) return;
+
+  // Check for duplicate URL in community feed
+  const existingEntry = await checkDuplicateUrl(query);
+  if (existingEntry) {
+    const choice = await showDuplicateModal();
+    if (choice === 'existing') {
+      addressInput.value = existingEntry.url;
+      pageContainer.innerHTML = existingEntry.html;
+      bindPageLinks();
+      state.history = state.history.slice(0, state.historyIndex + 1);
+      state.history.push({ url: existingEntry.url, html: existingEntry.html });
+      state.historyIndex = state.history.length - 1;
+      updateNavButtons();
+      $('#contentArea').scrollTop = 0;
+      return;
+    }
+  }
+
   state.isLoading = true;
   goBtn.disabled = true;
   addressInput.value = query;
@@ -1491,6 +1596,21 @@ async function navigateTo(query) {
       <div class="loading-step" id="loadingStep">Generating page content...</div>
     </div>
   `;
+
+  // Determine storage URL (add suffix if duplicate)
+  let storageUrl = query.toLowerCase();
+  if (existingEntry) {
+    try {
+      const snap = await firebaseDb.ref('feed')
+        .orderByChild('url')
+        .startAt(query.toLowerCase())
+        .endAt(query.toLowerCase() + '\uf8ff')
+        .once('value');
+      let count = 0;
+      if (snap.exists()) snap.forEach(() => count++);
+      storageUrl = query.toLowerCase() + '~' + (count + 1);
+    } catch { /* use base url */ }
+  }
 
   try {
     // Step 1: Generate page HTML
@@ -1527,7 +1647,7 @@ async function navigateTo(query) {
     });
 
     // Auto-publish to community feed (fire and forget)
-    publishToFeed(query, pageTitle, pageContainer.innerHTML);
+    publishToFeed(storageUrl, pageTitle, pageContainer.innerHTML);
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
@@ -1661,8 +1781,8 @@ function bindPageLinks() {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       let href = link.getAttribute('href');
-      // Strip side:// prefix for clean display
-      href = href.replace(/^side:\/\//, '');
+      // Strip sidenet:// or legacy side:// prefix
+      href = href.replace(/^(sidenet|side):\/\//, '');
       navigateTo(href);
     });
   });
@@ -1753,7 +1873,7 @@ function renderHistoryPanel() {
       <div class="history-item" data-ts="${entry.timestamp}" data-url="${escapeHtml(entry.url)}">
         <div class="history-item-content">
           <div class="history-item-title">${title}</div>
-          <div class="history-item-url">side://${url}</div>
+          <div class="history-item-url">sidenet://${url}</div>
         </div>
         <span class="history-item-time">${time}</span>
         <button class="history-item-delete" data-delete-ts="${entry.timestamp}" title="Remove">&times;</button>
@@ -1906,7 +2026,7 @@ function publishToFeed(url, title, html) {
   const preview = tmp.textContent.substring(0, 200).trim();
 
   firebaseDb.ref('feed').push({
-    url,
+    url: url.toLowerCase(),
     title: title || url,
     preview,
     html: cleanHtml,
@@ -1956,7 +2076,7 @@ function renderFeed(entries) {
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}">
         <div class="feed-card-title">${title}</div>
-        <div class="feed-card-url">side://${url}</div>
+        <div class="feed-card-url">sidenet://${url}</div>
         <div class="feed-card-preview">${preview}</div>
         <div class="feed-card-meta">
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
@@ -1988,7 +2108,7 @@ function renderFeed(entries) {
         }
       } catch {
         // Fallback: just navigate
-        const url = card.querySelector('.feed-card-url').textContent.replace('side://', '');
+        const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
         navigateTo(url);
       }
       toggleFeed(false);
@@ -2061,7 +2181,7 @@ function renderWelcomeFeed(entries) {
     html += `
       <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}">
         <div class="feed-card-title">${title}</div>
-        <div class="feed-card-url">side://${url}</div>
+        <div class="feed-card-url">sidenet://${url}</div>
         <div class="feed-card-preview">${preview}</div>
         <div class="feed-card-meta">
           <span><span class="feed-card-author">${author}</span> &middot; ${ago}</span>
@@ -2091,7 +2211,7 @@ function renderWelcomeFeed(entries) {
           navigateTo(entry.url);
         }
       } catch {
-        const url = card.querySelector('.feed-card-url').textContent.replace('side://', '');
+        const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
         navigateTo(url);
       }
     });
