@@ -1284,15 +1284,15 @@
 
 <script>
 // ── State ──
-// ── Hardcoded Firebase config ──
+// ── Firebase config (injected at build time) ──
 const FIREBASE_CONFIG = {
   apiKey: "__FIREBASE_API_KEY__",
   authDomain: "__FIREBASE_AUTH_DOMAIN__",
   databaseURL: "__FIREBASE_DATABASE_URL__",
-  projectId: "sidenet-61c6d",
+  projectId: "__FIREBASE_PROJECT_ID__",
   storageBucket: "__FIREBASE_STORAGE_BUCKET__",
   messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-  appId: "1:__FIREBASE_MESSAGING_SENDER_ID__:web:82aa4199ba940a05db5c6f",
+  appId: "__FIREBASE_APP_ID__",
 };
 
 const DEFAULT_SYSTEM_PROMPT = `You are sidenet, an AI that generates creative, detailed pages for an alternate-reality internet browser.
