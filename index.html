@@ -2616,13 +2616,13 @@ async function loadWelcomeFeed() {
       }
       return true;
     });
-    renderWelcomeFeed(deduped);
+    renderWelcomeFeed(deduped, entries);
   } catch (err) {
     welcomeFeedList.innerHTML = `<div class="feed-empty">Could not load feed: ${escapeHtml(err.message)}</div>`;
   }
 }
 
-function renderWelcomeFeed(entries) {
+function renderWelcomeFeed(entries, allEntries) {
   if (!welcomeFeedList) return;
   if (entries.length === 0) {
     welcomeFeedList.innerHTML = '<div class="feed-empty">No pages yet. Generate something and it\'ll appear here!</div>';
@@ -2685,7 +2685,7 @@ function renderWelcomeFeed(entries) {
       }
     });
   });
-  bindScrubbers(welcomeFeedList, entries);
+  bindScrubbers(welcomeFeedList, allEntries || entries);
 }
 
 // ── Exploration Scrubber Controller ──
