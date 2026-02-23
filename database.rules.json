@@ -5,6 +5,10 @@
       ".write": true,
       ".indexOn": ["timestamp", "url"]
     },
+    "explorations": {
+      ".read": true,
+      ".write": true
+    },
     "users": {
       "$uid": {
         ".read": "auth !== null && auth.uid === $uid",

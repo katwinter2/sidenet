@@ -737,6 +737,27 @@
     display: block;
   }
 
+  /* Constellation overlay */
+  .constellation-wrapper {
+    position: fixed;
+    z-index: 95;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+
+  .constellation-wrapper.visible {
+    opacity: 1;
+  }
+
+  .constellation-canvas {
+    display: block;
+    border-radius: 12px;
+    background: radial-gradient(ellipse at center, #1a1a2e 0%, #0d0d14 100%);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
   /* History panel */
   .history-panel {
     position: fixed;
@@ -1220,6 +1241,11 @@
   </div>
 </div>
 
+<!-- Constellation overlay -->
+<div class="constellation-wrapper" id="constellationWrapper">
+  <canvas class="constellation-canvas" id="constellationCanvas"></canvas>
+</div>
+
 <script>
 // ── State ──
 // ── Hardcoded Firebase config ──
@@ -1263,6 +1289,8 @@ const state = {
   firebaseReady: false,
   firebaseUid: null,
   settingsSynced: false,
+  currentFeedKey: null,
+  currentExplorationId: null,
 };
 
 // ── DOM refs ──
@@ -1564,7 +1592,7 @@ function showDuplicateModal() {
 }
 
 // ── Main page generation ──
-async function navigateTo(query) {
+async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = {}) {
   if (!query) return;
 
   // Check for duplicate URL in community feed
@@ -1579,6 +1607,8 @@ async function navigateTo(query) {
       state.history.push({ url: existingEntry.url, html: existingEntry.html });
       state.historyIndex = state.history.length - 1;
       updateNavButtons();
+      state.currentFeedKey = existingEntry.key || null;
+      state.currentExplorationId = existingEntry.explorationId || null;
       $('#contentArea').scrollTop = 0;
       return;
     }
@@ -1646,8 +1676,10 @@ async function navigateTo(query) {
       model: modelSelect.value,
     });
 
-    // Auto-publish to community feed (fire and forget)
-    publishToFeed(storageUrl, pageTitle, pageContainer.innerHTML);
+    // Auto-publish to community feed and track exploration tree
+    const feedKey = await publishToFeed(storageUrl, pageTitle, pageContainer.innerHTML);
+    state.currentFeedKey = feedKey;
+    updateExplorationTree(query, pageTitle, feedKey, pageContainer.innerHTML, { parentFeedKey, explorationId, parentHtml });
 
     // Scroll to top
     $('#contentArea').scrollTop = 0;
@@ -1777,13 +1809,18 @@ async function generateImages(prompts) {
 
 // ── Link binding ──
 function bindPageLinks() {
+  const parentHtml = pageContainer.innerHTML;
   pageContainer.querySelectorAll('a[href]').forEach((link) => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       let href = link.getAttribute('href');
       // Strip sidenet:// or legacy side:// prefix
       href = href.replace(/^(sidenet|side):\/\//, '');
-      navigateTo(href);
+      navigateTo(href, {
+        parentFeedKey: state.currentFeedKey,
+        explorationId: state.currentExplorationId,
+        parentHtml,
+      });
     });
   });
 }
@@ -2019,13 +2056,15 @@ function saveSettingsToFirebase() {
 }
 
 function publishToFeed(url, title, html) {
-  if (!state.firebaseReady || !firebaseDb) return;
+  if (!state.firebaseReady || !firebaseDb) return Promise.resolve(null);
   const cleanHtml = html.substring(0, 40000);
   const tmp = document.createElement('div');
   tmp.innerHTML = cleanHtml;
   const preview = tmp.textContent.substring(0, 200).trim();
 
-  firebaseDb.ref('feed').push({
+  const newRef = firebaseDb.ref('feed').push();
+  const feedKey = newRef.key;
+  return newRef.set({
     url: url.toLowerCase(),
     title: title || url,
     preview,
@@ -2033,7 +2072,110 @@ function publishToFeed(url, title, html) {
     author: state.displayName || 'Anonymous',
     model: modelSelect.value,
     timestamp: Date.now(),
-  }).catch(() => {}); // silent fail
+    explorationId: null,
+  }).then(() => feedKey).catch(() => null);
+}
+
+function computeContentDiff(parentHtml, childHtml) {
+  const toText = (h) => { const t = document.createElement('div'); t.innerHTML = h; return t.textContent || ''; };
+  const parentWords = new Set(toText(parentHtml).toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const childWords = toText(childHtml).toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  let newCount = 0;
+  for (const w of childWords) { if (!parentWords.has(w)) newCount++; }
+  return { size: newCount };
+}
+
+function extractNewConcepts(parentHtml, childHtml) {
+  const concepts = [];
+  const parentEl = document.createElement('div');
+  parentEl.innerHTML = parentHtml;
+  const childEl = document.createElement('div');
+  childEl.innerHTML = childHtml;
+
+  // New headings
+  const parentHeadings = new Set([...parentEl.querySelectorAll('h1,h2,h3')].map(h => h.textContent.trim().toLowerCase()));
+  for (const h of childEl.querySelectorAll('h1,h2,h3')) {
+    const text = h.textContent.trim();
+    if (text && !parentHeadings.has(text.toLowerCase())) concepts.push(text.substring(0, 60));
+  }
+
+  // New link texts
+  const parentLinks = new Set([...parentEl.querySelectorAll('a')].map(a => a.textContent.trim().toLowerCase()));
+  for (const a of childEl.querySelectorAll('a')) {
+    const text = a.textContent.trim();
+    if (text && text.length > 3 && !parentLinks.has(text.toLowerCase())) concepts.push(text.substring(0, 60));
+  }
+
+  // New bold/strong text
+  const parentBold = new Set([...parentEl.querySelectorAll('strong,b')].map(b => b.textContent.trim().toLowerCase()));
+  for (const b of childEl.querySelectorAll('strong,b')) {
+    const text = b.textContent.trim();
+    if (text && text.length > 3 && !parentBold.has(text.toLowerCase())) concepts.push(text.substring(0, 60));
+  }
+
+  return [...new Set(concepts)].slice(0, 8);
+}
+
+async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey, explorationId, parentHtml }) {
+  if (!state.firebaseReady || !firebaseDb || !feedKey) return;
+  try {
+    if (explorationId && parentFeedKey && parentHtml) {
+      // Child navigation (link click) — extend existing tree
+      const diffResult = computeContentDiff(parentHtml, html);
+      const concepts = extractNewConcepts(parentHtml, html);
+
+      // Find parent node by feedKey (client-side scan)
+      const nodesSnap = await firebaseDb.ref('explorations/' + explorationId + '/nodes').once('value');
+      let parentNodeId = null;
+      if (nodesSnap.exists()) {
+        nodesSnap.forEach(child => {
+          if (child.val().feedKey === parentFeedKey) parentNodeId = child.key;
+        });
+      }
+
+      const newNodeRef = firebaseDb.ref('explorations/' + explorationId + '/nodes').push();
+      await newNodeRef.set({
+        url: url.toLowerCase(),
+        title: title,
+        parentNodeId: parentNodeId,
+        feedKey: feedKey,
+        timestamp: Date.now(),
+        diffSize: diffResult.size,
+        concepts: concepts,
+      });
+
+      await firebaseDb.ref('feed/' + feedKey + '/explorationId').set(explorationId);
+      state.currentExplorationId = explorationId;
+    } else {
+      // New root (user typed URL)
+      const newExplorationRef = firebaseDb.ref('explorations').push();
+      const newExplorationId = newExplorationRef.key;
+      const newNodeRef = newExplorationRef.child('nodes').push();
+
+      await newExplorationRef.set({
+        rootUrl: url.toLowerCase(),
+        authorUid: state.firebaseUid || null,
+        author: state.displayName || 'Anonymous',
+        createdAt: Date.now(),
+        nodes: {
+          [newNodeRef.key]: {
+            url: url.toLowerCase(),
+            title: title,
+            parentNodeId: null,
+            feedKey: feedKey,
+            timestamp: Date.now(),
+            diffSize: 0,
+            concepts: [],
+          }
+        }
+      });
+
+      await firebaseDb.ref('feed/' + feedKey + '/explorationId').set(newExplorationId);
+      state.currentExplorationId = newExplorationId;
+    }
+  } catch (err) {
+    console.error('Exploration tree update failed:', err);
+  }
 }
 
 async function loadFeed() {
@@ -2074,7 +2216,7 @@ function renderFeed(entries) {
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
     html += `
-      <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}">
+      <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
         <div class="feed-card-title">${title}</div>
         <div class="feed-card-url">sidenet://${url}</div>
         <div class="feed-card-preview">${preview}</div>
@@ -2090,6 +2232,7 @@ function renderFeed(entries) {
   // Bind card clicks — load the shared page
   feedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', async () => {
+      hideConstellation();
       const key = card.dataset.feedKey;
       try {
         const snap = await firebaseDb.ref('feed/' + key).once('value');
@@ -2102,6 +2245,8 @@ function renderFeed(entries) {
           state.history.push({ url: entry.url, html: pageContainer.innerHTML });
           state.historyIndex = state.history.length - 1;
           updateNavButtons();
+          state.currentFeedKey = key;
+          state.currentExplorationId = entry.explorationId || null;
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
@@ -2114,6 +2259,7 @@ function renderFeed(entries) {
       toggleFeed(false);
     });
   });
+  bindConstellationHovers(feedList);
 }
 
 function timeAgo(ts) {
@@ -2179,7 +2325,7 @@ function renderWelcomeFeed(entries) {
     const model = escapeHtml(entry.model || '?');
     const ago = timeAgo(entry.timestamp);
     html += `
-      <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}">
+      <div class="feed-card" data-feed-key="${escapeHtml(entry.key)}" data-exploration-id="${escapeHtml(entry.explorationId || '')}">
         <div class="feed-card-title">${title}</div>
         <div class="feed-card-url">sidenet://${url}</div>
         <div class="feed-card-preview">${preview}</div>
@@ -2194,6 +2340,7 @@ function renderWelcomeFeed(entries) {
   // Bind card clicks
   welcomeFeedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', async () => {
+      hideConstellation();
       const key = card.dataset.feedKey;
       try {
         const snap = await firebaseDb.ref('feed/' + key).once('value');
@@ -2206,6 +2353,8 @@ function renderWelcomeFeed(entries) {
           state.history.push({ url: entry.url, html: pageContainer.innerHTML });
           state.historyIndex = state.history.length - 1;
           updateNavButtons();
+          state.currentFeedKey = key;
+          state.currentExplorationId = entry.explorationId || null;
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
@@ -2214,6 +2363,277 @@ function renderWelcomeFeed(entries) {
         const url = card.querySelector('.feed-card-url').textContent.replace('sidenet://', '');
         navigateTo(url);
       }
+    });
+  });
+  bindConstellationHovers(welcomeFeedList);
+}
+
+// ── Constellation Renderer ──
+class ConstellationRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.nodes = [];
+    this.edges = [];
+    this.branches = [];
+    this.panX = 0;
+    this.targetPanX = 0;
+    this.totalWidth = 600;
+    this.animFrame = null;
+    this.dpr = window.devicePixelRatio || 1;
+    this._stars = null;
+  }
+
+  layoutTree(treeData) {
+    this.nodes = [];
+    this.edges = [];
+    this.branches = [];
+
+    if (!treeData || !treeData.nodes) {
+      this._layoutSingleNode(treeData);
+      return;
+    }
+
+    const nodeEntries = Object.entries(treeData.nodes)
+      .map(([id, n]) => ({ id, ...n }))
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    if (nodeEntries.length === 0) { this._layoutSingleNode(treeData); return; }
+
+    const root = nodeEntries.find(n => !n.parentNodeId) || nodeEntries[0];
+    const children = {};
+    for (const n of nodeEntries) {
+      if (n.parentNodeId) {
+        if (!children[n.parentNodeId]) children[n.parentNodeId] = [];
+        children[n.parentNodeId].push(n);
+      }
+    }
+
+    const SPINE_Y = this.canvas.height / (2 * this.dpr);
+    const X_SPACING = 120;
+    const maxDiff = Math.max(...nodeEntries.map(n => n.diffSize || 1), 1);
+    let currentX = 60;
+
+    const layout = (node, yOffset) => {
+      const norm = (node.diffSize || 0) / maxDiff;
+      const radius = 6 + norm * 14;
+      const laid = { x: currentX, y: SPINE_Y + yOffset, radius, url: node.url || '', title: node.title || '', isRoot: !node.parentNodeId, concepts: node.concepts || [] };
+      this.nodes.push(laid);
+
+      if (laid.concepts.length > 0) {
+        laid.concepts.forEach((c, i) => {
+          const angle = -Math.PI / 4 - (i * Math.PI / 8);
+          const len = 35 + Math.random() * 20;
+          this.branches.push({ fromX: laid.x, fromY: laid.y, toX: laid.x + Math.cos(angle) * len, toY: laid.y + Math.sin(angle) * len, label: c });
+        });
+      }
+
+      const kids = children[node.id] || [];
+      kids.forEach((child, i) => {
+        currentX += X_SPACING;
+        const childY = (i - (kids.length - 1) / 2) * 40;
+        const parent = laid;
+        layout(child, childY);
+        const childNode = this.nodes[this.nodes.length - 1];
+        this.edges.push({ fromX: parent.x, fromY: parent.y, toX: childNode.x, toY: childNode.y });
+      });
+
+      if (kids.length === 0 && node !== root) return;
+      if (kids.length === 0) return;
+    };
+
+    layout(root, 0);
+    this.totalWidth = currentX + 60;
+  }
+
+  _layoutSingleNode(treeData) {
+    const cx = this.canvas.width / (2 * this.dpr);
+    const cy = this.canvas.height / (2 * this.dpr);
+    this.nodes = [{ x: cx, y: cy, radius: 10, url: treeData?.rootUrl || '?', title: '', isRoot: true, concepts: [] }];
+    this.totalWidth = this.canvas.width / this.dpr;
+  }
+
+  setPan(ratio) {
+    const canvasW = this.canvas.width / this.dpr;
+    const maxPan = Math.max(0, this.totalWidth - canvasW);
+    this.targetPanX = -ratio * maxPan;
+  }
+
+  render() {
+    this.panX += (this.targetPanX - this.panX) * 0.15;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.scale(this.dpr, this.dpr);
+    ctx.translate(this.panX, 0);
+
+    // Background stars
+    if (!this._stars) {
+      this._stars = [];
+      for (let i = 0; i < 60; i++) {
+        this._stars.push({ x: Math.random() * this.totalWidth, y: Math.random() * (h / this.dpr), r: 0.3 + Math.random() * 1.2, a: 0.1 + Math.random() * 0.3 });
+      }
+    }
+    for (const s of this._stars) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(240,240,242,${s.a})`;
+      ctx.fill();
+    }
+
+    // Edges
+    ctx.strokeStyle = 'rgba(240,200,216,0.2)';
+    ctx.lineWidth = 1;
+    for (const e of this.edges) {
+      ctx.beginPath();
+      const mx = (e.fromX + e.toX) / 2;
+      ctx.moveTo(e.fromX, e.fromY);
+      ctx.bezierCurveTo(mx, e.fromY, mx, e.toY, e.toX, e.toY);
+      ctx.stroke();
+    }
+
+    // Concept branches
+    ctx.strokeStyle = 'rgba(240,200,216,0.12)';
+    ctx.lineWidth = 0.5;
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(144,144,160,0.7)';
+    for (const b of this.branches) {
+      ctx.beginPath();
+      ctx.moveTo(b.fromX, b.fromY);
+      ctx.lineTo(b.toX, b.toY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(b.toX, b.toY, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillText(b.label, b.toX + 4, b.toY + 3);
+    }
+
+    // Nodes
+    for (const n of this.nodes) {
+      const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.radius * 2.5);
+      g.addColorStop(0, n.isRoot ? 'rgba(240,200,216,0.3)' : 'rgba(240,200,216,0.15)');
+      g.addColorStop(1, 'rgba(240,200,216,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+      ctx.fillStyle = n.isRoot ? '#f0c8d8' : 'rgba(240,200,216,0.7)';
+      ctx.fill();
+
+      ctx.font = '10px "SF Mono","Fira Code",monospace';
+      ctx.fillStyle = 'rgba(240,240,242,0.5)';
+      ctx.textAlign = 'center';
+      const label = (n.url || '').length > 25 ? n.url.substring(0, 22) + '...' : n.url;
+      ctx.fillText(label, n.x, n.y + n.radius + 14);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.restore();
+    this.animFrame = requestAnimationFrame(() => this.render());
+  }
+
+  start() { if (!this.animFrame) this.render(); }
+  stop() { if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; } }
+  reset() {
+    this.stop();
+    this.nodes = [];
+    this.edges = [];
+    this.branches = [];
+    this._stars = null;
+    this.panX = 0;
+    this.targetPanX = 0;
+  }
+}
+
+// ── Constellation Hover Controller ──
+const constellationWrapper = $('#constellationWrapper');
+const constellationCanvas = $('#constellationCanvas');
+const constellationCache = new Map();
+let constellationRenderer = null;
+let constellationHoverTimeout = null;
+const CONSTELLATION_W = 560;
+const CONSTELLATION_H = 200;
+
+function showConstellation(card) {
+  const explorationId = card.dataset.explorationId;
+  if (!explorationId) { showSingleNodeConstellation(card); return; }
+
+  const cached = constellationCache.get(explorationId);
+  if (cached && (Date.now() - cached.at < 300000)) {
+    renderConstellation(card, cached.data);
+    return;
+  }
+
+  if (!state.firebaseReady || !firebaseDb) { showSingleNodeConstellation(card); return; }
+
+  firebaseDb.ref('explorations/' + explorationId).once('value')
+    .then(snap => {
+      const data = snap.val();
+      if (data) {
+        constellationCache.set(explorationId, { data, at: Date.now() });
+        if (card.matches(':hover')) renderConstellation(card, data);
+      } else {
+        showSingleNodeConstellation(card);
+      }
+    })
+    .catch(() => showSingleNodeConstellation(card));
+}
+
+function showSingleNodeConstellation(card) {
+  const url = card.querySelector('.feed-card-url')?.textContent?.replace('sidenet://', '') || '?';
+  renderConstellation(card, { rootUrl: url, nodes: null });
+}
+
+function renderConstellation(card, treeData) {
+  if (!constellationRenderer) constellationRenderer = new ConstellationRenderer(constellationCanvas);
+  const dpr = window.devicePixelRatio || 1;
+  constellationCanvas.width = CONSTELLATION_W * dpr;
+  constellationCanvas.height = CONSTELLATION_H * dpr;
+  constellationCanvas.style.width = CONSTELLATION_W + 'px';
+  constellationCanvas.style.height = CONSTELLATION_H + 'px';
+
+  constellationRenderer.reset();
+  constellationRenderer.layoutTree(treeData);
+
+  const rect = card.getBoundingClientRect();
+  let left = rect.left + rect.width / 2 - CONSTELLATION_W / 2;
+  let top = rect.top > CONSTELLATION_H + 16 ? rect.top - CONSTELLATION_H - 8 : rect.bottom + 8;
+  left = Math.max(8, Math.min(left, window.innerWidth - CONSTELLATION_W - 8));
+  constellationWrapper.style.left = left + 'px';
+  constellationWrapper.style.top = top + 'px';
+  constellationWrapper.style.width = CONSTELLATION_W + 'px';
+  constellationWrapper.style.height = CONSTELLATION_H + 'px';
+
+  constellationWrapper.classList.add('visible');
+  constellationRenderer.start();
+}
+
+function hideConstellation() {
+  constellationWrapper.classList.remove('visible');
+  if (constellationRenderer) constellationRenderer.stop();
+}
+
+function bindConstellationHovers(container) {
+  container.querySelectorAll('.feed-card').forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      clearTimeout(constellationHoverTimeout);
+      constellationHoverTimeout = setTimeout(() => showConstellation(card), 200);
+    });
+    card.addEventListener('mousemove', (e) => {
+      if (constellationRenderer && constellationWrapper.classList.contains('visible')) {
+        const rect = card.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        constellationRenderer.setPan(Math.max(0, Math.min(1, ratio)));
+      }
+    });
+    card.addEventListener('mouseleave', () => {
+      clearTimeout(constellationHoverTimeout);
+      hideConstellation();
     });
   });
 }
