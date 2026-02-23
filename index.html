@@ -1497,11 +1497,17 @@ let firebaseDb = null;
 
 function initFirebase() {
   try {
+    if (typeof firebase === 'undefined') {
+      console.warn('Firebase SDK not loaded yet, retrying...');
+      setTimeout(initFirebase, 500);
+      return;
+    }
     if (!firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     firebaseDb = firebase.database();
     state.firebaseReady = true;
+    console.log('Firebase initialized successfully');
   } catch (err) {
     console.error('Firebase init failed:', err);
     state.firebaseReady = false;
@@ -1528,11 +1534,8 @@ function publishToFeed(url, title, html) {
 
 async function loadFeed() {
   if (!state.firebaseReady || !firebaseDb) {
-    feedList.innerHTML = `
-      <div class="feed-empty">
-        Community feed not connected.<br/><br/>
-        Add your Firebase config in Settings to see and share pages with others.
-      </div>`;
+    feedList.innerHTML = `<div class="feed-empty">Community feed connecting...</div>`;
+    setTimeout(() => { if (state.firebaseReady) loadFeed(); }, 1000);
     return;
   }
   feedList.innerHTML = '<div class="feed-empty">Loading...</div>';
@@ -1634,14 +1637,17 @@ feedBackdrop.addEventListener('click', () => toggleFeed(false));
 refreshFeedBtn.addEventListener('click', () => loadFeed());
 
 // ── Welcome page feed (inline) ──
+let welcomeFeedRetries = 0;
 async function loadWelcomeFeed() {
   if (!welcomeFeedList) return;
   if (!state.firebaseReady || !firebaseDb) {
     welcomeFeedList.innerHTML = '<div class="feed-empty">Connecting to community feed...</div>';
-    // Retry after a short delay in case Firebase is still initializing
-    setTimeout(() => {
-      if (state.firebaseReady) loadWelcomeFeed();
-    }, 1000);
+    if (welcomeFeedRetries < 10) {
+      welcomeFeedRetries++;
+      setTimeout(() => loadWelcomeFeed(), 1000);
+    } else {
+      welcomeFeedList.innerHTML = '<div class="feed-empty">Could not connect to community feed. Try refreshing the page.</div>';
+    }
     return;
   }
   welcomeFeedList.innerHTML = '<div class="feed-empty">Loading community feed...</div>';
