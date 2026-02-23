@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>sidenet</title>
+<title>surfing sidenet</title>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -472,6 +472,17 @@
   .form-group input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  .tonal-modifier-display {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .tonal-modifier-label {
+    color: var(--accent);
+    margin-right: 4px;
   }
 
   .form-hint {
@@ -1139,7 +1150,6 @@
   <div class="page-container" id="pageContainer">
     <div class="welcome-header">
       <div class="welcome-logo">sidenet</div>
-      <p class="welcome-sub">Surf the sidenet.</p>
       <div class="welcome-hints">
         <div class="hint-chip" onclick="navigateTo('en.wikipedia.alt/wiki/The_Great_Martian_Canal_System')">wikipedia.alt/Martian Canals</div>
         <div class="hint-chip" onclick="navigateTo('news.alternate/2099/quantum-internet-goes-live')">Future News</div>
@@ -1224,6 +1234,10 @@
         <button class="btn-icon" id="editPromptsBtn" title="Edit system prompts">&#9998;</button>
       </div>
       <div class="form-hint">Controls the AI's behavior and page generation style</div>
+      <div class="tonal-modifier-display" id="tonalModifierDisplay" style="display:none">
+        <span class="tonal-modifier-label">session tone:</span>
+        <span id="tonalModifierValue"></span>
+      </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:20px 0" />
     <div class="form-group">
@@ -1323,6 +1337,7 @@ const state = {
   settingsSynced: false,
   currentFeedKey: null,
   currentExplorationId: null,
+  tonalModifier: null,
 };
 
 // ── DOM refs ──
@@ -1389,6 +1404,14 @@ settingsBtn.addEventListener('click', () => {
   temperatureValue.textContent = state.temperature.toFixed(2);
   populatePromptPresetSelect();
   fetchBalance();
+  const modDisplay = $('#tonalModifierDisplay');
+  const modValue = $('#tonalModifierValue');
+  if (state.tonalModifier) {
+    modValue.textContent = state.tonalModifier;
+    modDisplay.style.display = '';
+  } else {
+    modDisplay.style.display = 'none';
+  }
 });
 
 cancelSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
@@ -1675,6 +1698,11 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
   }
 
   try {
+    // Generate tonal modifier for new explorations (not link clicks)
+    if (!parentFeedKey) {
+      state.tonalModifier = await generateTonalModifier(query);
+    }
+
     // Step 1: Generate page HTML
     const pageHTML = await generatePage(query);
 
@@ -1736,7 +1764,10 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
 // ── Text generation ──
 async function generatePage(query) {
   const model = modelSelect.value;
-  const systemPrompt = getActiveSystemPrompt();
+  let systemPrompt = getActiveSystemPrompt();
+  if (state.tonalModifier) {
+    systemPrompt += '\n\nTone: ' + state.tonalModifier;
+  }
 
   const userPrompt = `Generate the webpage for: ${query}
 
@@ -1769,6 +1800,34 @@ This is a page on the alternate internet. Create rich, immersive content with im
   // Strip markdown code fences if the model wrapped its output
   content = content.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
   return content;
+}
+
+async function generateTonalModifier(url) {
+  try {
+    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(state.apiKey ? { 'Authorization': `Bearer ${state.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: 'nova-fast',
+        messages: [
+          { role: 'system', content: 'You generate tonal modifiers for creative writing. A tonal modifier is a short phrase (3-8 words) describing a mood, disposition, or emotional texture — NOT a theme, topic, or scenario. Examples: "wistful and slightly amused", "quietly conspiratorial", "warm but formally distant", "dreamlike with sharp edges". Respond with ONLY the phrase, no quotes, no punctuation at the end, no explanation.' },
+          { role: 'user', content: url },
+        ],
+        temperature: 1.0,
+        max_tokens: 30,
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    let modifier = (data.choices[0].message.content || '').trim();
+    modifier = modifier.replace(/^["']|["']$/g, '').replace(/[.!]$/, '').substring(0, 80);
+    return modifier || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Image handling ──
@@ -2174,6 +2233,7 @@ async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey,
         timestamp: Date.now(),
         diffSize: diffResult.size,
         concepts: concepts,
+        tonalModifier: state.tonalModifier || null,
       });
 
       await firebaseDb.ref('feed/' + feedKey + '/explorationId').set(explorationId);
@@ -2189,6 +2249,7 @@ async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey,
         authorUid: state.firebaseUid || null,
         author: state.displayName || 'Anonymous',
         createdAt: Date.now(),
+        tonalModifier: state.tonalModifier || null,
         nodes: {
           [newNodeRef.key]: {
             url: url.toLowerCase(),
@@ -2198,6 +2259,7 @@ async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey,
             timestamp: Date.now(),
             diffSize: 0,
             concepts: [],
+            tonalModifier: state.tonalModifier || null,
           }
         }
       });
@@ -2280,6 +2342,11 @@ function renderFeed(entries) {
           updateNavButtons();
           state.currentFeedKey = key;
           state.currentExplorationId = entry.explorationId || null;
+          if (entry.explorationId && state.firebaseReady && firebaseDb) {
+            firebaseDb.ref('explorations/' + entry.explorationId + '/tonalModifier').once('value')
+              .then(snap => { state.tonalModifier = snap.val() || null; })
+              .catch(() => {});
+          }
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
@@ -2389,6 +2456,11 @@ function renderWelcomeFeed(entries) {
           updateNavButtons();
           state.currentFeedKey = key;
           state.currentExplorationId = entry.explorationId || null;
+          if (entry.explorationId && state.firebaseReady && firebaseDb) {
+            firebaseDb.ref('explorations/' + entry.explorationId + '/tonalModifier').once('value')
+              .then(snap => { state.tonalModifier = snap.val() || null; })
+              .catch(() => {});
+          }
           $('#contentArea').scrollTop = 0;
         } else {
           navigateTo(entry.url);
