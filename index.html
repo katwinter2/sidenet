@@ -1067,7 +1067,6 @@ apiKeyInput.value = state.apiKey;
 imagesPerPageInput.value = state.imagesPerPage;
 displayNameInput.value = state.displayName;
 initFirebase();
-loadWelcomeFeed();
 
 // ── Settings ──
 settingsBtn.addEventListener('click', () => {
@@ -1507,7 +1506,8 @@ function initFirebase() {
     }
     firebaseDb = firebase.database();
     state.firebaseReady = true;
-    console.log('Firebase initialized successfully');
+    // Trigger welcome feed now that Firebase is ready
+    loadWelcomeFeed();
   } catch (err) {
     console.error('Firebase init failed:', err);
     state.firebaseReady = false;
@@ -1637,17 +1637,10 @@ feedBackdrop.addEventListener('click', () => toggleFeed(false));
 refreshFeedBtn.addEventListener('click', () => loadFeed());
 
 // ── Welcome page feed (inline) ──
-let welcomeFeedRetries = 0;
 async function loadWelcomeFeed() {
   if (!welcomeFeedList) return;
   if (!state.firebaseReady || !firebaseDb) {
     welcomeFeedList.innerHTML = '<div class="feed-empty">Connecting to community feed...</div>';
-    if (welcomeFeedRetries < 10) {
-      welcomeFeedRetries++;
-      setTimeout(() => loadWelcomeFeed(), 1000);
-    } else {
-      welcomeFeedList.innerHTML = '<div class="feed-empty">Could not connect to community feed. Try refreshing the page.</div>';
-    }
     return;
   }
   welcomeFeedList.innerHTML = '<div class="feed-empty">Loading community feed...</div>';
