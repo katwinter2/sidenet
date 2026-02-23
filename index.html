@@ -509,6 +509,156 @@
 
   .btn-primary:hover { background: var(--accent-hover); }
 
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+
+  .btn-danger:hover {
+    background: var(--danger);
+    color: white;
+  }
+
+  .btn-danger:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  /* Temperature slider */
+  .temperature-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .temperature-control input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .temperature-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  .temperature-control input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--accent-hover);
+  }
+
+  .temperature-value {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: var(--text);
+    min-width: 32px;
+    text-align: right;
+  }
+
+  /* Prompt preset row */
+  .prompt-preset-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .prompt-preset-row select {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    font-family: inherit;
+  }
+
+  .prompt-preset-row select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  .btn-icon {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .btn-icon:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+
+  /* Prompt editor modal */
+  .prompt-editor-overlay { z-index: 101; }
+
+  .modal.prompt-editor-modal {
+    width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .prompt-editor-modal textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 200px;
+    max-height: 400px;
+    outline: none;
+  }
+
+  .prompt-editor-modal textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  .prompt-editor-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .prompt-editor-actions .left-actions,
+  .prompt-editor-actions .right-actions {
+    display: flex;
+    gap: 8px;
+  }
+
   /* Error state */
   .error-banner {
     background: #ff446620;
@@ -993,6 +1143,22 @@
       <input type="number" id="imagesPerPage" min="1" max="3" value="2" />
       <div class="form-hint">How many AI images to generate per page</div>
     </div>
+    <div class="form-group">
+      <label>Temperature</label>
+      <div class="temperature-control">
+        <input type="range" id="temperatureSlider" min="0" max="2" step="0.05" value="0.85" />
+        <span class="temperature-value" id="temperatureValue">0.85</span>
+      </div>
+      <div class="form-hint">Lower = more focused, Higher = more creative (default: 0.85)</div>
+    </div>
+    <div class="form-group">
+      <label>System Prompt</label>
+      <div class="prompt-preset-row">
+        <select id="promptPresetSelect"></select>
+        <button class="btn-icon" id="editPromptsBtn" title="Edit system prompts">&#9998;</button>
+      </div>
+      <div class="form-hint">Controls the AI's behavior and page generation style</div>
+    </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:20px 0" />
     <div class="form-group">
       <label>Display Name (for community feed)</label>
@@ -1002,6 +1168,32 @@
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelSettings">Cancel</button>
       <button class="btn-primary" id="saveSettings">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- System Prompt Editor modal -->
+<div class="modal-overlay prompt-editor-overlay" id="promptEditorModal">
+  <div class="modal prompt-editor-modal">
+    <h2>Edit System Prompt</h2>
+    <div class="form-group">
+      <label>Preset Name</label>
+      <input type="text" id="promptNameInput" placeholder="My Custom Prompt" style="font-family:inherit" />
+    </div>
+    <div class="form-group">
+      <label>System Prompt</label>
+      <textarea id="promptTextarea" placeholder="Enter your system prompt here..."></textarea>
+    </div>
+    <div class="prompt-editor-actions">
+      <div class="left-actions">
+        <button class="btn-danger" id="deletePromptBtn">Delete</button>
+        <button class="btn-secondary" id="resetPromptBtn">Reset to Default</button>
+      </div>
+      <div class="right-actions">
+        <button class="btn-secondary" id="saveAsNewPromptBtn">Save as New</button>
+        <button class="btn-primary" id="savePromptBtn">Save</button>
+        <button class="btn-secondary" id="closePromptEditorBtn">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1019,10 +1211,30 @@ const FIREBASE_CONFIG = {
   appId: "1:__FIREBASE_MESSAGING_SENDER_ID__:web:82aa4199ba940a05db5c6f",
 };
 
+const DEFAULT_SYSTEM_PROMPT = `You are SideNet, an AI that generates creative, detailed HTML pages for an alternate-reality internet browser.
+
+RULES:
+- Output ONLY raw HTML content (no \`\`\`html blocks, no markdown, no explanations)
+- Use semantic HTML: h1, h2, h3, p, ul, ol, blockquote, table, pre, code, hr, etc.
+- Include 1-3 images using this EXACT format: <img data-ai-prompt="detailed image description here" alt="description" />
+- Include 3-6 hyperlinks using this format: <a href="side://some-url-path">Link Text</a>
+  - Links should point to related pages on this alternate internet
+  - Use creative, plausible URLs like side://en.wikipedia.alt/wiki/Topic or side://news.alt/article-slug
+- Make the content creative, detailed, internally consistent, and immersive
+- Pages should feel like real websites from a parallel universe - wikis, shops, forums, news sites, blogs, documentation, etc.
+- Be inventive with alternate history, science, culture, and technology
+- Content should be 300-600 words
+- Do NOT include <html>, <head>, <body>, or <style> tags - just the inner content`;
+
 const state = {
   apiKey: localStorage.getItem('sidenet_apiKey') || '',
   imagesPerPage: parseInt(localStorage.getItem('sidenet_imagesPerPage') || '2'),
   displayName: localStorage.getItem('sidenet_displayName') || '',
+  temperature: parseFloat(localStorage.getItem('sidenet_temperature') || '0.85'),
+  activePromptId: localStorage.getItem('sidenet_activePromptId') || 'default',
+  systemPromptPresets: JSON.parse(localStorage.getItem('sidenet_systemPromptPresets') || 'null') || {
+    default: { name: 'Default SideNet', prompt: DEFAULT_SYSTEM_PROMPT }
+  },
   history: [],
   historyIndex: -1,
   isLoading: false,
@@ -1060,6 +1272,18 @@ const refreshFeedBtn = $('#refreshFeedBtn');
 const closeFeedBtn = $('#closeFeedBtn');
 const displayNameInput = $('#displayNameInput');
 const welcomeFeedList = $('#welcomeFeedList');
+const temperatureSlider = $('#temperatureSlider');
+const temperatureValue = $('#temperatureValue');
+const promptPresetSelect = $('#promptPresetSelect');
+const editPromptsBtn = $('#editPromptsBtn');
+const promptEditorModal = $('#promptEditorModal');
+const promptNameInput = $('#promptNameInput');
+const promptTextarea = $('#promptTextarea');
+const deletePromptBtn = $('#deletePromptBtn');
+const resetPromptBtn = $('#resetPromptBtn');
+const saveAsNewPromptBtn = $('#saveAsNewPromptBtn');
+const savePromptBtn = $('#savePromptBtn');
+const closePromptEditorBtn = $('#closePromptEditorBtn');
 
 // ── Init ──
 let firebaseDb = null;
@@ -1067,6 +1291,9 @@ updateStatusBar();
 apiKeyInput.value = state.apiKey;
 imagesPerPageInput.value = state.imagesPerPage;
 displayNameInput.value = state.displayName;
+temperatureSlider.value = state.temperature;
+temperatureValue.textContent = state.temperature.toFixed(2);
+populatePromptPresetSelect();
 initFirebase();
 
 // ── Settings ──
@@ -1075,9 +1302,16 @@ settingsBtn.addEventListener('click', () => {
   apiKeyInput.value = state.apiKey;
   imagesPerPageInput.value = state.imagesPerPage;
   displayNameInput.value = state.displayName;
+  temperatureSlider.value = state.temperature;
+  temperatureValue.textContent = state.temperature.toFixed(2);
+  populatePromptPresetSelect();
 });
 
 cancelSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
+
+temperatureSlider.addEventListener('input', () => {
+  temperatureValue.textContent = parseFloat(temperatureSlider.value).toFixed(2);
+});
 
 settingsModal.addEventListener('click', (e) => {
   if (e.target === settingsModal) settingsModal.classList.remove('open');
@@ -1087,9 +1321,13 @@ saveSettingsBtn.addEventListener('click', () => {
   state.apiKey = apiKeyInput.value.trim();
   state.imagesPerPage = Math.min(3, Math.max(1, parseInt(imagesPerPageInput.value) || 2));
   state.displayName = displayNameInput.value.trim();
+  state.temperature = parseFloat(temperatureSlider.value);
+  state.activePromptId = promptPresetSelect.value;
   localStorage.setItem('sidenet_apiKey', state.apiKey);
   localStorage.setItem('sidenet_imagesPerPage', state.imagesPerPage);
   localStorage.setItem('sidenet_displayName', state.displayName);
+  localStorage.setItem('sidenet_temperature', state.temperature);
+  localStorage.setItem('sidenet_activePromptId', state.activePromptId);
   settingsModal.classList.remove('open');
   updateStatusBar();
 });
@@ -1107,6 +1345,92 @@ function updateStatusBar() {
 }
 
 modelSelect.addEventListener('change', updateStatusBar);
+
+// ── System Prompt Presets ──
+function populatePromptPresetSelect() {
+  promptPresetSelect.innerHTML = '';
+  for (const [id, preset] of Object.entries(state.systemPromptPresets)) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = preset.name;
+    promptPresetSelect.appendChild(opt);
+  }
+  promptPresetSelect.value = state.activePromptId;
+  if (!promptPresetSelect.value && promptPresetSelect.options.length > 0) {
+    promptPresetSelect.value = promptPresetSelect.options[0].value;
+    state.activePromptId = promptPresetSelect.value;
+  }
+}
+
+function savePresetsToStorage() {
+  localStorage.setItem('sidenet_systemPromptPresets', JSON.stringify(state.systemPromptPresets));
+  localStorage.setItem('sidenet_activePromptId', state.activePromptId);
+}
+
+function getActiveSystemPrompt() {
+  const preset = state.systemPromptPresets[state.activePromptId];
+  return preset ? preset.prompt : DEFAULT_SYSTEM_PROMPT;
+}
+
+editPromptsBtn.addEventListener('click', () => {
+  const currentId = promptPresetSelect.value || state.activePromptId;
+  const preset = state.systemPromptPresets[currentId];
+  promptNameInput.value = preset ? preset.name : '';
+  promptTextarea.value = preset ? preset.prompt : DEFAULT_SYSTEM_PROMPT;
+  deletePromptBtn.disabled = (currentId === 'default');
+  promptEditorModal.classList.add('open');
+});
+
+closePromptEditorBtn.addEventListener('click', () => {
+  promptEditorModal.classList.remove('open');
+});
+
+promptEditorModal.addEventListener('click', (e) => {
+  if (e.target === promptEditorModal) promptEditorModal.classList.remove('open');
+});
+
+savePromptBtn.addEventListener('click', () => {
+  const currentId = promptPresetSelect.value || state.activePromptId;
+  state.systemPromptPresets[currentId] = {
+    name: promptNameInput.value.trim() || 'Untitled',
+    prompt: promptTextarea.value,
+  };
+  state.activePromptId = currentId;
+  savePresetsToStorage();
+  populatePromptPresetSelect();
+  promptEditorModal.classList.remove('open');
+});
+
+saveAsNewPromptBtn.addEventListener('click', () => {
+  const newId = 'custom_' + Date.now();
+  state.systemPromptPresets[newId] = {
+    name: promptNameInput.value.trim() || 'Untitled',
+    prompt: promptTextarea.value,
+  };
+  state.activePromptId = newId;
+  savePresetsToStorage();
+  populatePromptPresetSelect();
+  promptEditorModal.classList.remove('open');
+});
+
+deletePromptBtn.addEventListener('click', () => {
+  const currentId = promptPresetSelect.value || state.activePromptId;
+  if (currentId === 'default') return;
+  if (!confirm('Delete this prompt preset?')) return;
+  delete state.systemPromptPresets[currentId];
+  state.activePromptId = 'default';
+  savePresetsToStorage();
+  populatePromptPresetSelect();
+  const d = state.systemPromptPresets['default'];
+  promptNameInput.value = d.name;
+  promptTextarea.value = d.prompt;
+  deletePromptBtn.disabled = true;
+});
+
+resetPromptBtn.addEventListener('click', () => {
+  promptTextarea.value = DEFAULT_SYSTEM_PROMPT;
+  promptNameInput.value = 'Default SideNet';
+});
 
 // ── Navigation ──
 addressInput.addEventListener('keydown', (e) => {
@@ -1222,20 +1546,7 @@ async function navigateTo(query) {
 // ── Text generation ──
 async function generatePage(query) {
   const model = modelSelect.value;
-  const systemPrompt = `You are SideNet, an AI that generates creative, detailed HTML pages for an alternate-reality internet browser.
-
-RULES:
-- Output ONLY raw HTML content (no \`\`\`html blocks, no markdown, no explanations)
-- Use semantic HTML: h1, h2, h3, p, ul, ol, blockquote, table, pre, code, hr, etc.
-- Include 1-3 images using this EXACT format: <img data-ai-prompt="detailed image description here" alt="description" />
-- Include 3-6 hyperlinks using this format: <a href="side://some-url-path">Link Text</a>
-  - Links should point to related pages on this alternate internet
-  - Use creative, plausible URLs like side://en.wikipedia.alt/wiki/Topic or side://news.alt/article-slug
-- Make the content creative, detailed, internally consistent, and immersive
-- Pages should feel like real websites from a parallel universe - wikis, shops, forums, news sites, blogs, documentation, etc.
-- Be inventive with alternate history, science, culture, and technology
-- Content should be 300-600 words
-- Do NOT include <html>, <head>, <body>, or <style> tags - just the inner content`;
+  const systemPrompt = getActiveSystemPrompt();
 
   const userPrompt = `Generate the webpage for: ${query}
 
@@ -1253,7 +1564,7 @@ This is a page on the alternate internet. Create rich, immersive content with im
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.85,
+      temperature: state.temperature,
       max_tokens: 2048,
     }),
   });
