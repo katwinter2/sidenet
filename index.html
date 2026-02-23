@@ -11,7 +11,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root {
@@ -1404,7 +1403,6 @@ const closePromptEditorBtn = $('#closePromptEditorBtn');
 // ── Init ──
 let firebaseDb = null;
 let firebaseAuth = null;
-let firebaseStorage = null;
 updateStatusBar();
 apiKeyInput.value = state.apiKey;
 imagesPerPageInput.value = state.imagesPerPage;
@@ -1907,20 +1905,31 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     const { html: processedHtml, imagePrompts } = parseAndInsertImages(rawHtml);
 
     // Step 3: Render page (iframe for JS, direct DOM for CSS-only)
+    let finalHtml = processedHtml; // will be updated after images resolve
     if (js.trim()) {
       const resolved = resolveImagesForIframe(processedHtml, imagePrompts);
+      finalHtml = resolved;
       renderStructuredPage(resolved, css, js);
     } else {
       renderStructuredPage(processedHtml, css, '');
       const limitedPrompts = imagePrompts.slice(0, state.imagesPerPage);
       if (limitedPrompts.length > 0) {
         await generateImages(limitedPrompts);
+        // After images load, extract final HTML with resolved <img> src URLs
+        const gen = pageContainer.querySelector('.generated-page');
+        if (gen) {
+          // Get innerHTML but strip the scoped <style> tag we injected
+          const clone = gen.cloneNode(true);
+          const injectedStyle = clone.querySelector('style');
+          if (injectedStyle) injectedStyle.remove();
+          finalHtml = clone.innerHTML;
+        }
       }
       bindPageLinks();
     }
 
-    // Save to session history (pack structured content for storage)
-    const packed = packPageContent(processedHtml, css, js);
+    // Save to session history (pack with final resolved image URLs)
+    const packed = packPageContent(finalHtml, css, js);
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push({ url: query, html: packed });
     state.historyIndex = state.history.length - 1;
@@ -1928,7 +1937,7 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     updateBrowserUrl(query);
 
     // Save to persistent history
-    const pageTitle = extractTitle(processedHtml) || query;
+    const pageTitle = extractTitle(finalHtml) || query;
     const now = Date.now();
     savePersistentHistory({
       url: query,
@@ -1946,13 +1955,14 @@ async function navigateTo(query, { parentFeedKey, explorationId, parentHtml } = 
     // Capture screenshot asynchronously (don't block page display)
     if (feedKey) {
       if (js.trim()) {
-        captureHtmlAsScreenshot(processedHtml, css, feedKey).then(url => {
+        captureHtmlAsScreenshot(finalHtml, css, feedKey).then(url => {
           if (url) updateNodeScreenshot(feedKey, state.currentExplorationId, url);
         });
       } else {
+        // Wait for all images to fully load before capturing screenshot
         const imgs = pageContainer.querySelectorAll('.page-image');
         const waits = [...imgs].map(img =>
-          img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; setTimeout(r, 10000); })
+          img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; setTimeout(r, 15000); })
         );
         Promise.allSettled(waits).then(() => {
           captureAndUploadScreenshot(feedKey).then(url => {
@@ -2166,9 +2176,35 @@ function restorePage(stored) {
   const { html, css, js } = unpackPageContent(stored);
   if (css || js) {
     renderStructuredPage(html, css, js);
-    if (!js.trim()) bindPageLinks();
+    if (!js.trim()) {
+      // Check for unresolved image placeholders and generate them
+      const placeholders = pageContainer.querySelectorAll('.image-placeholder');
+      if (placeholders.length > 0) {
+        const prompts = [];
+        placeholders.forEach(p => {
+          const id = p.id;
+          const text = p.textContent || '';
+          const match = text.match(/Generating image: "(.+?)\.{3}"/);
+          if (match && id) prompts.push({ id, prompt: match[1] });
+        });
+        if (prompts.length > 0) generateImages(prompts.slice(0, state.imagesPerPage));
+      }
+      bindPageLinks();
+    }
   } else {
     pageContainer.innerHTML = html;
+    // Check for unresolved image placeholders in legacy entries
+    const placeholders = pageContainer.querySelectorAll('.image-placeholder');
+    if (placeholders.length > 0) {
+      const prompts = [];
+      placeholders.forEach(p => {
+        const id = p.id;
+        const text = p.textContent || '';
+        const match = text.match(/Generating image: "(.+?)\.{3}"/);
+        if (match && id) prompts.push({ id, prompt: match[1] });
+      });
+      if (prompts.length > 0) generateImages(prompts.slice(0, state.imagesPerPage));
+    }
     bindPageLinks();
   }
 }
@@ -2431,7 +2467,6 @@ function initFirebase() {
     }
     firebaseDb = firebase.database();
     firebaseAuth = firebase.auth();
-    firebaseStorage = firebase.storage();
 
     firebaseAuth.onAuthStateChanged(async (user) => {
       if (user) {
@@ -2535,33 +2570,38 @@ function publishToFeed(url, title, html) {
     model: modelSelect.value,
     timestamp: Date.now(),
     explorationId: null,
-  }).then(() => { feedCache.at = 0; return feedKey; }).catch(() => null);
+  }).then(() => { feedCache.at = 0; welcomeFeedCache.at = 0; return feedKey; }).catch(() => null);
 }
 
 // ── Screenshot capture ──
 
 async function captureAndUploadScreenshot(feedKey) {
-  if (!firebaseStorage || !feedKey) return null;
+  if (!firebaseDb || !feedKey) return null;
   try {
     const target = pageContainer.querySelector('.generated-page');
     if (!target) return null;
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500));
     const canvas = await html2canvas(target, {
       backgroundColor: '#1a1a1a',
-      scale: 0.5,
+      scale: 0.35,
       width: target.scrollWidth,
-      height: Math.min(target.scrollHeight, 800),
+      height: Math.min(target.scrollHeight, 700),
       logging: false,
       useCORS: true,
       allowTaint: true,
     });
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
-    if (!blob || blob.size < 100) return null;
-    const ref = firebaseStorage.ref('screenshots/' + feedKey + '.jpg');
-    const snap = await ref.put(blob, { contentType: 'image/jpeg' });
-    const downloadUrl = await snap.ref.getDownloadURL();
-    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(downloadUrl);
-    return downloadUrl;
+    // Convert to small base64 JPEG and store directly in Realtime DB
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
+    if (dataUrl.length < 200) return null; // too small = blank
+    if (dataUrl.length > 80000) {
+      // Re-render at even lower quality if too large for RTDB
+      const dataUrl2 = canvas.toDataURL('image/jpeg', 0.25);
+      if (dataUrl2.length > 80000) return null;
+      await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl2);
+      return dataUrl2;
+    }
+    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
+    return dataUrl;
   } catch (err) {
     console.error('Screenshot capture failed:', err);
     return null;
@@ -2569,7 +2609,7 @@ async function captureAndUploadScreenshot(feedKey) {
 }
 
 async function captureHtmlAsScreenshot(html, css, feedKey) {
-  if (!firebaseStorage || !feedKey) return null;
+  if (!firebaseDb || !feedKey) return null;
   try {
     const offscreen = document.createElement('div');
     offscreen.className = 'generated-page';
@@ -2583,22 +2623,25 @@ async function captureHtmlAsScreenshot(html, css, feedKey) {
     content.innerHTML = html;
     offscreen.appendChild(content);
     document.body.appendChild(offscreen);
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200));
     const canvas = await html2canvas(offscreen, {
       backgroundColor: '#1a1a1a',
-      scale: 0.5,
+      scale: 0.35,
       width: 800,
-      height: Math.min(offscreen.scrollHeight, 800),
+      height: Math.min(offscreen.scrollHeight, 700),
       logging: false,
     });
     document.body.removeChild(offscreen);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
-    if (!blob || blob.size < 100) return null;
-    const ref = firebaseStorage.ref('screenshots/' + feedKey + '.jpg');
-    const snap = await ref.put(blob, { contentType: 'image/jpeg' });
-    const downloadUrl = await snap.ref.getDownloadURL();
-    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(downloadUrl);
-    return downloadUrl;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
+    if (dataUrl.length < 200) return null;
+    if (dataUrl.length > 80000) {
+      const dataUrl2 = canvas.toDataURL('image/jpeg', 0.25);
+      if (dataUrl2.length > 80000) return null;
+      await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl2);
+      return dataUrl2;
+    }
+    await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
+    return dataUrl;
   } catch (err) {
     console.error('Screenshot capture (offscreen) failed:', err);
     return null;
@@ -2727,7 +2770,8 @@ async function updateExplorationTree(url, title, feedKey, html, { parentFeedKey,
 }
 
 let feedCache = { entries: null, at: 0 };
-const FEED_CACHE_TTL = 60000; // 1 minute
+const FEED_CACHE_TTL = 300000; // 5 minutes
+let welcomeFeedCache = { entries: null, allEntries: null, at: 0 };
 
 async function loadFeed(bypassCache) {
   if (!state.firebaseReady || !firebaseDb) {
@@ -2862,6 +2906,11 @@ async function loadWelcomeFeed() {
     welcomeFeedList.innerHTML = '<div class="feed-empty">Tuning in...</div>';
     return;
   }
+  // Serve from cache if fresh
+  if (welcomeFeedCache.entries && (Date.now() - welcomeFeedCache.at < FEED_CACHE_TTL)) {
+    renderWelcomeFeed(welcomeFeedCache.entries, welcomeFeedCache.allEntries);
+    return;
+  }
   welcomeFeedList.innerHTML = '<div class="feed-empty">Scanning the airwaves...</div>';
   try {
     const snap = await firebaseDb.ref('feed')
@@ -2892,6 +2941,7 @@ async function loadWelcomeFeed() {
       }
       return true;
     });
+    welcomeFeedCache = { entries: deduped, allEntries: entries, at: Date.now() };
     renderWelcomeFeed(deduped, entries);
   } catch (err) {
     welcomeFeedList.innerHTML = `<div class="feed-empty">Could not load feed: ${escapeHtml(err.message)}</div>`;
