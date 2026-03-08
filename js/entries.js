@@ -135,8 +135,24 @@ async function saveEntry(worldId, entryData) {
 }
 
 async function createEntry(userInput) {
-  if (!userInput || !state.currentWorldId) return;
+  if (!userInput) return;
   if (state.isLoading) return;
+
+  // Auto-create a world if none exists
+  if (!state.currentWorldId) {
+    try {
+      await autoCreateWorld(userInput);
+    } catch (err) {
+      console.error('Auto-create world failed:', err);
+      pageContainer.innerHTML = `
+        <div class="page-container">
+          <div class="error-banner">
+            <strong>Could not create world:</strong> ${escapeHtml(err.message)}
+          </div>
+        </div>`;
+      return;
+    }
+  }
 
   state.isLoading = true;
   goBtn.disabled = true;

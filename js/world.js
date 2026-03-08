@@ -95,6 +95,21 @@ async function listPublicWorlds(limit = 30) {
   return worlds;
 }
 
+async function autoCreateWorld(userInput) {
+  // Derive a world name from the prompt (first 60 chars, trimmed at word boundary)
+  let name = userInput.length <= 60
+    ? userInput
+    : userInput.substring(0, 60).replace(/\s+\S*$/, '') + '...';
+  name = name.replace(/^["'\s]+|["'\s]+$/g, '');
+  if (!name) name = 'New World';
+
+  const worldId = await createWorld(name, userInput, 'fantasy');
+  await loadWorld(worldId);
+  worldNameBtn.textContent = state.currentWorldName;
+  worldSidebar.classList.add('has-world');
+  renderEntryList();
+}
+
 function showWelcomeScreen() {
   state.viewMode = 'overview';
   state.currentEntryId = null;
@@ -106,8 +121,9 @@ function showWelcomeScreen() {
         <div class="welcome-logo">sidenet</div>
         <p class="welcome-sub">collaborative worldbuilder</p>
       </div>
-      <div class="welcome-actions">
-        <button class="btn-primary welcome-create-btn" id="welcomeCreateBtn">Create a New World</button>
+      <div class="welcome-prompt-hint">
+        <p>Type anything in the bar above and the AI will build a world around it.</p>
+        <p class="overview-hint">Try: "The life of a rural merchant in the post starfaring collapse where all planets were left isolated from the galactic core planets"</p>
       </div>
       <div class="welcome-worlds-section" id="welcomeWorldsSection">
         <h3>Your Worlds</h3>
@@ -123,9 +139,9 @@ function showWelcomeScreen() {
       </div>
     </div>
   `;
-
-  document.getElementById('welcomeCreateBtn').addEventListener('click', showWorldCreateModal);
   loadWelcomeWorlds();
+  // Focus the creation bar so the user can start typing immediately
+  addressInput.focus();
 }
 
 async function loadWelcomeWorlds() {

@@ -5,10 +5,6 @@ addressInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !state.isLoading) {
     const val = addressInput.value.trim();
     if (!val) return;
-    if (!state.currentWorldId) {
-      showWorldCreateModal();
-      return;
-    }
     createEntry(val);
   }
 });
@@ -17,10 +13,6 @@ goBtn.addEventListener('click', () => {
   if (state.isLoading) return;
   const val = addressInput.value.trim();
   if (!val) return;
-  if (!state.currentWorldId) {
-    showWorldCreateModal();
-    return;
-  }
   createEntry(val);
 });
 

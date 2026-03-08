@@ -563,6 +563,20 @@ body {
   border-radius: 8px;
 }
 
+.welcome-prompt-hint {
+  text-align: center;
+  margin: 20px 0 32px;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.welcome-prompt-hint p:first-child {
+  color: var(--text);
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
 .welcome-worlds-section,
 .welcome-community-section {
   margin-top: 24px;
