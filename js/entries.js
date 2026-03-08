@@ -122,12 +122,12 @@ function parseWorldResponse(raw) {
 
 async function saveEntry(worldId, entryData) {
   if (!state.firebaseReady || !firebaseDb) throw new Error('Firebase not ready');
-  const ref = firebaseDb.ref('worlds/' + worldId + '/entries').push();
+  const ref = firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entries').push();
   const entryId = ref.key;
   await ref.set({ ...entryData, id: entryId });
 
   // Increment world entry count
-  const countRef = firebaseDb.ref('worlds/' + worldId + '/entryCount');
+  const countRef = firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entryCount');
   const countSnap = await countRef.once('value');
   await countRef.set((countSnap.val() || 0) + 1);
 
@@ -272,7 +272,7 @@ async function createEntry(userInput) {
         });
         const dataUrl = canvasToCompactDataUrl(canvas, CONFIG.screenshots.maxBytes);
         if (dataUrl && dataUrl.length > 200) {
-          await firebaseDb.ref('worlds/' + state.currentWorldId + '/entries/' + entryId + '/imageUrl').set(dataUrl);
+          await firebaseDb.ref(userWorldsPath() + '/' + state.currentWorldId + '/entries/' + entryId + '/imageUrl').set(dataUrl);
           // Update local cache
           const localEntry = state.worldEntries.find(e => e.id === entryId);
           if (localEntry) localEntry.imageUrl = dataUrl;
@@ -306,7 +306,7 @@ async function createEntry(userInput) {
 
 async function openEntry(entryId) {
   if (!state.currentWorldId || !firebaseDb) return;
-  const snap = await firebaseDb.ref('worlds/' + state.currentWorldId + '/entries/' + entryId).once('value');
+  const snap = await firebaseDb.ref(userWorldsPath() + '/' + state.currentWorldId + '/entries/' + entryId).once('value');
   const entry = snap.val();
   if (!entry || !entry.content) return;
 

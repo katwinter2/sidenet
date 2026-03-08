@@ -1,8 +1,13 @@
 // ── World Management ──
 
+// Helper: Firebase path for current user's worlds
+function userWorldsPath() {
+  return 'users/' + state.firebaseUid + '/worlds';
+}
+
 async function createWorld(name, description, genre) {
   if (!state.firebaseReady || !firebaseDb) throw new Error('Firebase not ready');
-  const ref = firebaseDb.ref('worlds').push();
+  const ref = firebaseDb.ref(userWorldsPath()).push();
   const worldId = ref.key;
   const data = {
     name,
@@ -20,7 +25,7 @@ async function createWorld(name, description, genre) {
 
 async function loadWorld(worldId) {
   if (!state.firebaseReady || !firebaseDb) return;
-  const snap = await firebaseDb.ref('worlds/' + worldId).once('value');
+  const snap = await firebaseDb.ref(userWorldsPath() + '/' + worldId).once('value');
   if (!snap.exists()) return null;
   const data = snap.val();
   state.currentWorldId = worldId;
@@ -30,7 +35,7 @@ async function loadWorld(worldId) {
   localStorage.setItem('sidenet_currentWorldName', state.currentWorldName);
 
   // Load all entry summaries (not full content)
-  const entriesSnap = await firebaseDb.ref('worlds/' + worldId + '/entries').once('value');
+  const entriesSnap = await firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entries').once('value');
   state.worldEntries = [];
   if (entriesSnap.exists()) {
     entriesSnap.forEach(child => {
@@ -64,10 +69,7 @@ async function switchWorld(worldId) {
 
 async function listMyWorlds() {
   if (!state.firebaseReady || !firebaseDb || !state.firebaseUid) return [];
-  const snap = await firebaseDb.ref('worlds')
-    .orderByChild('authorUid')
-    .equalTo(state.firebaseUid)
-    .once('value');
+  const snap = await firebaseDb.ref(userWorldsPath()).once('value');
   const worlds = [];
   if (snap.exists()) {
     snap.forEach(child => {
@@ -79,20 +81,8 @@ async function listMyWorlds() {
 }
 
 async function listPublicWorlds(limit = 30) {
-  if (!state.firebaseReady || !firebaseDb) return [];
-  const snap = await firebaseDb.ref('worlds')
-    .orderByChild('createdAt')
-    .limitToLast(limit)
-    .once('value');
-  const worlds = [];
-  if (snap.exists()) {
-    snap.forEach(child => {
-      const w = child.val();
-      if (w.isPublic) worlds.push({ id: child.key, ...w });
-    });
-  }
-  worlds.reverse();
-  return worlds;
+  // Community worlds require updated database rules — disabled for now
+  return [];
 }
 
 async function autoCreateWorld(userInput) {

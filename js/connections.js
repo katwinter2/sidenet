@@ -17,14 +17,14 @@ async function resolveConnections(worldId, entryId, connections) {
       // Store bidirectional connection on both entries
       try {
         // Forward: new entry -> existing
-        await firebaseDb.ref('worlds/' + worldId + '/entries/' + entryId + '/connections').push().set({
+        await firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entries/' + entryId + '/connections').push().set({
           entryId: existing.id,
           name: existing.name,
           relationship,
         });
         // Reverse: existing -> new entry
         const newEntry = state.worldEntries.find(e => e.id === entryId);
-        await firebaseDb.ref('worlds/' + worldId + '/entries/' + existing.id + '/connections').push().set({
+        await firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entries/' + existing.id + '/connections').push().set({
           entryId,
           name: newEntry ? newEntry.name : connName,
           relationship: 'connected to',
@@ -48,7 +48,7 @@ async function resolveConnections(worldId, entryId, connections) {
     });
     for (const conn of unresolved) {
       try {
-        await firebaseDb.ref('worlds/' + worldId + '/entries/' + existingEntry.id + '/connections').push().set({
+        await firebaseDb.ref(userWorldsPath() + '/' + worldId + '/entries/' + existingEntry.id + '/connections').push().set({
           entryId,
           name: newEntry.name,
           relationship: typeof conn === 'string' ? 'connected to' : (conn.relationship || 'connected to'),
