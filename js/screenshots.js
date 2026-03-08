@@ -2,7 +2,7 @@
 
 function canvasToCompactDataUrl(canvas, maxBytes) {
   // Try progressive quality reduction to fit within size limit
-  for (const q of [0.7, 0.55, 0.4, 0.25]) {
+  for (const q of CONFIG.screenshots.qualityLevels) {
     const dataUrl = canvas.toDataURL('image/jpeg', q);
     if (dataUrl.length <= maxBytes) return dataUrl;
   }
@@ -14,19 +14,19 @@ async function captureAndUploadScreenshot(feedKey) {
   try {
     const target = pageContainer.querySelector('.generated-page');
     if (!target) return null;
-    await new Promise(r => setTimeout(r, 500));
-    const captureWidth = Math.min(target.scrollWidth, 900);
-    const captureHeight = Math.min(target.scrollHeight, 900);
+    await new Promise(r => setTimeout(r, CONFIG.screenshots.captureDelay));
+    const captureWidth = Math.min(target.scrollWidth, CONFIG.screenshots.maxDimension);
+    const captureHeight = Math.min(target.scrollHeight, CONFIG.screenshots.maxDimension);
     const canvas = await html2canvas(target, {
-      backgroundColor: '#1a1a1a',
-      scale: 0.6,
+      backgroundColor: CONFIG.screenshots.backgroundColor,
+      scale: CONFIG.screenshots.scale,
       width: captureWidth,
       height: captureHeight,
       logging: false,
       useCORS: true,
       allowTaint: true,
     });
-    const dataUrl = canvasToCompactDataUrl(canvas, 120000);
+    const dataUrl = canvasToCompactDataUrl(canvas, CONFIG.screenshots.maxBytes);
     if (!dataUrl || dataUrl.length < 200) return null;
     await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
     return dataUrl;
@@ -41,7 +41,7 @@ async function captureHtmlAsScreenshot(html, css, feedKey) {
   try {
     const offscreen = document.createElement('div');
     offscreen.className = 'generated-page';
-    offscreen.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:900px;overflow:hidden;';
+    offscreen.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:' + CONFIG.screenshots.maxDimension + 'px;overflow:hidden;';
     if (css) {
       const style = document.createElement('style');
       style.textContent = css;
@@ -51,16 +51,16 @@ async function captureHtmlAsScreenshot(html, css, feedKey) {
     content.innerHTML = html;
     offscreen.appendChild(content);
     document.body.appendChild(offscreen);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, CONFIG.screenshots.offscreenDelay));
     const canvas = await html2canvas(offscreen, {
-      backgroundColor: '#1a1a1a',
-      scale: 0.6,
-      width: 900,
-      height: Math.min(offscreen.scrollHeight, 900),
+      backgroundColor: CONFIG.screenshots.backgroundColor,
+      scale: CONFIG.screenshots.scale,
+      width: CONFIG.screenshots.maxDimension,
+      height: Math.min(offscreen.scrollHeight, CONFIG.screenshots.maxDimension),
       logging: false,
     });
     document.body.removeChild(offscreen);
-    const dataUrl = canvasToCompactDataUrl(canvas, 120000);
+    const dataUrl = canvasToCompactDataUrl(canvas, CONFIG.screenshots.maxBytes);
     if (!dataUrl || dataUrl.length < 200) return null;
     await firebaseDb.ref('feed/' + feedKey + '/screenshotUrl').set(dataUrl);
     return dataUrl;

@@ -10,7 +10,7 @@ async function generatePage(query) {
 
 This is a page on the alternate internet. Create rich, immersive content with images and links to other pages.`;
 
-  const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+  const response = await fetch(CONFIG.api.textGeneration, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -23,7 +23,7 @@ This is a page on the alternate internet. Create rich, immersive content with im
         { role: 'user', content: userPrompt },
       ],
       temperature: state.temperature,
-      max_tokens: 2048,
+      max_tokens: CONFIG.llm.maxTokens,
     }),
   });
 
@@ -41,26 +41,26 @@ This is a page on the alternate internet. Create rich, immersive content with im
 
 async function generateTonalModifier(url) {
   try {
-    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+    const response = await fetch(CONFIG.api.textGeneration, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(state.apiKey ? { 'Authorization': `Bearer ${state.apiKey}` } : {}),
       },
       body: JSON.stringify({
-        model: 'nova-fast',
+        model: CONFIG.tonalModifier.model,
         messages: [
-          { role: 'system', content: 'You generate tonal modifiers for creative writing. A tonal modifier is a short phrase (3-8 words) describing a mood, disposition, or emotional texture — NOT a theme, topic, or scenario. Examples: "wistful and slightly amused", "quietly conspiratorial", "warm but formally distant", "dreamlike with sharp edges". Respond with ONLY the phrase, no quotes, no punctuation at the end, no explanation.' },
+          { role: 'system', content: CONFIG.tonalModifier.systemPrompt },
           { role: 'user', content: url },
         ],
-        temperature: 1.0,
-        max_tokens: 30,
+        temperature: CONFIG.tonalModifier.temperature,
+        max_tokens: CONFIG.tonalModifier.maxTokens,
       }),
     });
     if (!response.ok) return null;
     const data = await response.json();
     let modifier = (data.choices[0].message.content || '').trim();
-    modifier = modifier.replace(/^["']|["']$/g, '').replace(/[.!]$/, '').substring(0, 80);
+    modifier = modifier.replace(/^["']|["']$/g, '').replace(/[.!]$/, '').substring(0, CONFIG.tonalModifier.maxLength);
     return modifier || null;
   } catch {
     return null;
@@ -100,6 +100,8 @@ function scopeCSS(cssText) {
         s = s.trim();
         if (!s || /^(from|to|\d+%)$/.test(s)) return s;
         if (s.includes('.generated-page')) return s;
+        // Map root-level selectors to .generated-page itself
+        if (/^(body|html|:root|\*)$/i.test(s)) return '.generated-page';
         return `.generated-page ${s}`;
       }).join(', ');
       return `${prefix} ${scoped} {`;
@@ -126,10 +128,13 @@ function unpackPageContent(stored) {
 function renderStructuredPage(html, css, js) {
   let extracted = '';
   html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, inner) => { extracted += inner + '\n'; return ''; });
-  const allCSS = scopeCSS(extracted + '\n' + css);
+  const rawCSS = extracted + '\n' + css;
   if (js.trim()) {
-    renderInIframe(html, allCSS, js);
+    // Iframe is sandboxed — no scoping needed, AI CSS applies directly
+    renderInIframe(html, rawCSS, js);
   } else {
+    // DOM path — scope CSS under .generated-page
+    const allCSS = scopeCSS(rawCSS);
     const style = allCSS ? `<style>${allCSS}</style>` : '';
     pageContainer.innerHTML = `<div class="generated-page">${style}${html}</div>`;
   }
@@ -138,19 +143,13 @@ function renderStructuredPage(html, css, js) {
 function renderInIframe(html, css, js) {
   const S = '<' + 'script>';
   const SE = '</' + 'script>';
+  // Minimal reset only — the AI's CSS controls everything
   const doc = '<!DOCTYPE html><html><head>'
     + '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<style>'
-    + ':root{--bg:#1a1a1a;--text:#e0e0e0;--accent:#e8a0bf;--border:#333;--surface:#242424;--surface2:#2a2a2a;--text-dim:#888}'
-    + 'body{background:var(--bg);color:var(--text);font-family:\'Ubuntu Condensed\',\'Segoe UI\',system-ui,sans-serif;line-height:1.7;padding:24px;margin:0}'
-    + 'a{color:var(--accent);text-decoration:none;cursor:pointer}'
-    + 'a:hover{color:#f0b8d0;border-bottom:1px solid #f0b8d0}'
-    + 'img{max-width:100%;border-radius:8px;border:1px solid var(--border)}'
-    + 'blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:14px 0;background:var(--surface);border-radius:0 6px 6px 0}'
-    + 'table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}th{background:var(--surface2);font-weight:600}'
-    + 'code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-family:\'SF Mono\',\'Fira Code\',monospace;font-size:13px}'
-    + 'pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto}pre code{background:none;padding:0}'
-    + 'hr{border:none;border-top:1px solid var(--border);margin:24px 0}'
+    + '*{margin:0;padding:0;box-sizing:border-box}'
+    + 'img{max-width:100%}'
+    + 'a{cursor:pointer}'
     + '</style>'
     + '<style>' + css + '</style>'
     + '</head><body>'
@@ -165,9 +164,9 @@ function renderInIframe(html, css, js) {
     + '</body></html>';
 
   const iframe = document.createElement('iframe');
-  iframe.sandbox = 'allow-scripts';
+  iframe.sandbox = CONFIG.iframe.sandbox;
   iframe.srcdoc = doc;
-  iframe.style.cssText = 'width:100%;border:none;min-height:400px;display:block;';
+  iframe.style.cssText = 'width:100%;border:none;min-height:' + CONFIG.iframe.minHeight + ';display:block;';
   pageContainer.innerHTML = '';
   pageContainer.appendChild(iframe);
 }

@@ -1,5 +1,20 @@
 {
   "rules": {
+    "worlds": {
+      ".read": true,
+      "$worldId": {
+        ".write": "auth !== null && (data.child('authorUid').val() === auth.uid || !data.exists())",
+        "entries": {
+          ".indexOn": ["type", "createdAt", "name"]
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid",
+        ".write": "auth !== null && auth.uid === $uid"
+      }
+    },
     "feed": {
       ".read": true,
       ".write": true,
@@ -8,12 +23,6 @@
     "explorations": {
       ".read": true,
       ".write": true
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth !== null && auth.uid === $uid",
-        ".write": "auth !== null && auth.uid === $uid"
-      }
     }
   }
 }

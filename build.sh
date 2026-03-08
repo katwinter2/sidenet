@@ -9,10 +9,10 @@ cp css/styles.css dist/css/styles.css
 # Copy index.html (no env vars in HTML anymore)
 cp index.html dist/index.html
 
-# Inject Firebase env vars into state.js, copy all other JS files as-is
+# Inject Firebase env vars into config.js, copy all other JS files as-is
 for f in js/*.js; do
   filename=$(basename "$f")
-  if [ "$filename" = "state.js" ]; then
+  if [ "$filename" = "config.js" ]; then
     sed \
       -e "s|__FIREBASE_API_KEY__|${FIREBASE_API_KEY}|g" \
       -e "s|__FIREBASE_AUTH_DOMAIN__|${FIREBASE_AUTH_DOMAIN}|g" \

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>surfing sidenet</title>
+<title>sidenet — worldbuilder</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath fill='%23d4a0b0' d='M80-40v-80h40q32 0 62-10t58-30q28 20 58 29.5t62 9.5q32 0 62.5-9.5T480-160q28 20 58 29.5t62 9.5q32 0 62.5-9.5T720-160q27 20 57.5 30t62.5 10h40v80h-40q-31 0-61-7.5T720-70q-29 15-59 22.5T600-40q-31 0-61-7.5T480-70q-29 15-59 22.5T360-40q-31 0-61-7.5T240-70q-29 15-59 22.5T120-40H80Zm260-760 222 41q14 2 27 11t22 25l35 62q26 45 72 73t102 28v80q-78 0-142-39T577-621l-90 61 153 120v154q16 11 31 23t29 23q-21 18-46 29t-54 11q-36 0-67-17t-53-43q-22 26-53 43t-67 17q-10 0-19.5-1.5T322-206q-86-59-144-119t-58-104q0-31 24-41t50-10q29 0 67 8.5t81 24.5l-21-124q-4-20 4.5-39.5T352-642l86-58q-3 0-14.5-2.5t-25.5-5-25.5-5Q361-715 358-715l-113 77-45-66 140-96Zm72 284 18 106q27 13 67 34.5t63 35.5v-60L412-516Zm268-224q-33 0-56.5-23.5T600-820q0-33 23.5-56.5T680-900q33 0 56.5 23.5T760-820q0 33-23.5 56.5T680-740Z'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,24 +18,21 @@
 
 <!-- Toolbar -->
 <div class="toolbar">
-  <div class="nav-buttons">
-    <button class="nav-btn" id="backBtn" disabled title="Back">&#8592;</button>
-    <button class="nav-btn" id="forwardBtn" disabled title="Forward">&#8594;</button>
-    <button class="nav-btn" id="homeBtn" title="Home"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="currentColor"><path d="M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z"/></svg></button>
+  <div class="world-name-area">
+    <button class="world-name-btn" id="worldNameBtn" title="Switch world">No World</button>
   </div>
 
   <div class="address-bar">
-    <span class="address-prefix">sidenet://</span>
     <input
       type="text"
       class="address-input"
       id="addressInput"
-      placeholder="make up a url"
+      placeholder="Describe a place, character, event..."
       autocomplete="off"
     />
   </div>
 
-  <button class="go-btn" id="goBtn">Go</button>
+  <button class="go-btn" id="goBtn">Create</button>
 
   <div class="toolbar-right">
     <select class="model-select" id="modelSelect">
@@ -55,8 +52,6 @@
         <option value="claude">Claude Sonnet 4.5 — best quality (25/p)</option>
       </optgroup>
     </select>
-    <button class="settings-btn" id="feedBtn" title="Community Feed">&#9733;</button>
-    <button class="settings-btn" id="historyBtn" title="History">&#9776;</button>
     <div class="settings-btn-wrapper">
       <button class="settings-btn" id="settingsBtn" title="Settings">&#9881;</button>
       <div class="connection-dot" id="connectionDot"></div>
@@ -65,55 +60,44 @@
   </div>
 </div>
 
-<!-- Main row: content + feed sidebar -->
+<!-- Main row: sidebar + content + suggestions -->
 <div class="main-row" id="mainRow">
+
+  <!-- Left sidebar: world index -->
+  <div class="world-sidebar" id="worldSidebar">
+    <div class="sidebar-search">
+      <input type="text" id="entrySearch" placeholder="Search entries..." />
+    </div>
+    <div class="sidebar-filters" id="sidebarFilters">
+      <button class="filter-btn active" data-type="all">All</button>
+      <button class="filter-btn" data-type="location">Locations</button>
+      <button class="filter-btn" data-type="character">Characters</button>
+      <button class="filter-btn" data-type="event">Events</button>
+      <button class="filter-btn" data-type="faction">Factions</button>
+      <button class="filter-btn" data-type="lore">Lore</button>
+      <button class="filter-btn" data-type="item">Items</button>
+    </div>
+    <div class="entry-list" id="entryList">
+      <div class="entry-list-empty">No entries yet. Create something!</div>
+    </div>
+  </div>
+
   <!-- Main content -->
   <div class="content-area" id="contentArea">
     <div class="page-container" id="pageContainer">
-      <div class="welcome-header">
-        <div class="welcome-logo">sidenet</div>
-      </div>
-      <div class="welcome-feed-section">
-        <div class="welcome-feed-header">
-          <h3>Today's Catch</h3>
-          <button class="settings-btn" onclick="loadWelcomeFeed()" title="Refresh" style="width:auto;padding:0 8px;font-size:12px;height:28px">Refresh</button>
-        </div>
-        <div class="welcome-feed-list" id="welcomeFeedList">
-          <div class="feed-empty">Scanning the airwaves...</div>
-        </div>
-      </div>
+      <!-- Welcome / world overview / immersive page rendered here -->
     </div>
   </div>
 
-  <!-- Feed panel (inline sidebar) -->
-  <div class="feed-panel" id="feedPanel">
-    <div class="feed-header">
-      <h3>Community Feed</h3>
-      <div class="feed-header-actions">
-        <button id="refreshFeedBtn">Refresh</button>
-        <button id="closeFeedBtn">Close</button>
-      </div>
+  <!-- Right panel: AI suggestions -->
+  <div class="suggestions-panel" id="suggestionsPanel">
+    <div class="suggestions-header">
+      <h3>AI Suggestions</h3>
+      <button class="suggestions-close" id="closeSuggestionsBtn">&times;</button>
     </div>
-    <div class="feed-list" id="feedList">
-      <div class="feed-empty">Scanning the airwaves...</div>
+    <div class="suggestions-list" id="suggestionsList">
+      <div class="suggestions-empty">Create an entry to get suggestions</div>
     </div>
-  </div>
-</div>
-
-<div class="feed-backdrop" id="feedBackdrop"></div>
-
-<!-- History panel -->
-<div class="history-backdrop" id="historyBackdrop"></div>
-<div class="history-panel" id="historyPanel">
-  <div class="history-header">
-    <h3>History</h3>
-    <div class="history-header-actions">
-      <button id="clearHistoryBtn">Clear all</button>
-      <button id="closeHistoryBtn">Close</button>
-    </div>
-  </div>
-  <div class="history-list" id="historyList">
-    <div class="history-empty">No pages visited yet.</div>
   </div>
 </div>
 
@@ -134,7 +118,7 @@
     <div class="form-group">
       <label>Images per page (1-3)</label>
       <input type="number" id="imagesPerPage" min="1" max="3" value="2" />
-      <div class="form-hint">How many AI images to generate per page</div>
+      <div class="form-hint">How many AI images to generate per entry</div>
     </div>
     <div class="form-group">
       <label>Temperature</label>
@@ -150,17 +134,13 @@
         <select id="promptPresetSelect"></select>
         <button class="btn-icon" id="editPromptsBtn" title="Edit system prompts">&#9998;</button>
       </div>
-      <div class="form-hint">Controls the AI's behavior and page generation style</div>
-      <div class="tonal-modifier-display" id="tonalModifierDisplay" style="display:none">
-        <span class="tonal-modifier-label">session tone:</span>
-        <span id="tonalModifierValue"></span>
-      </div>
+      <div class="form-hint">Controls the AI's worldbuilding style</div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:20px 0" />
     <div class="form-group">
-      <label>Display Name (for community feed)</label>
+      <label>Display Name</label>
       <input type="text" id="displayNameInput" placeholder="Anonymous" style="font-family:inherit" />
-      <div class="form-hint">Shown when you share pages to the feed</div>
+      <div class="form-hint">Shown when you share worlds to the community</div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelSettings">Cancel</button>
@@ -195,31 +175,67 @@
   </div>
 </div>
 
-<!-- Duplicate URL modal -->
-<div class="modal-overlay" id="duplicateModal">
-  <div class="modal" style="width:380px;text-align:center">
-    <h2 style="font-size:16px;margin-bottom:12px">Page Already Exists</h2>
-    <p style="color:var(--text-dim);font-size:14px;margin-bottom:20px;line-height:1.6">
-      A page like this has already been unearthed. Explore there instead?
-    </p>
-    <div class="modal-actions" style="justify-content:center">
-      <button class="btn-secondary" id="duplicateNo">No, generate new</button>
-      <button class="btn-primary" id="duplicateYes">Yes, take me there</button>
+<!-- World creation modal -->
+<div class="modal-overlay" id="worldCreateModal">
+  <div class="modal" style="width:460px">
+    <h2>Create a New World</h2>
+    <div class="form-group">
+      <label>World Name</label>
+      <input type="text" id="worldNameInput" placeholder="The Driftlands, Neon Meridian..." style="font-family:inherit" />
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <input type="text" id="worldDescInput" placeholder="A brief premise or genre for your world" style="font-family:inherit" />
+    </div>
+    <div class="form-group">
+      <label>Genre</label>
+      <select id="worldGenreSelect" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:14px;font-family:inherit">
+        <option value="fantasy">Fantasy</option>
+        <option value="sci-fi">Sci-Fi</option>
+        <option value="horror">Horror</option>
+        <option value="historical">Historical</option>
+        <option value="mythology">Mythology</option>
+        <option value="post-apocalyptic">Post-Apocalyptic</option>
+        <option value="steampunk">Steampunk</option>
+        <option value="cyberpunk">Cyberpunk</option>
+        <option value="surreal">Surreal</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cancelWorldCreate">Cancel</button>
+      <button class="btn-primary" id="confirmWorldCreate">Create World</button>
     </div>
   </div>
 </div>
 
-<!-- JS modules (order matters: state first, then features, then init) -->
+<!-- World selector modal -->
+<div class="modal-overlay" id="worldSelectModal">
+  <div class="modal" style="width:500px;max-height:80vh;display:flex;flex-direction:column">
+    <h2>Your Worlds</h2>
+    <div class="world-select-list" id="worldSelectList" style="flex:1;overflow-y:auto;margin:0 -24px;padding:0 24px">
+      <div class="feed-empty">Loading...</div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-secondary" id="cancelWorldSelect">Close</button>
+      <button class="btn-primary" id="newWorldFromSelect">New World</button>
+    </div>
+  </div>
+</div>
+
+<!-- JS modules -->
+<script src="js/config.js"></script>
 <script src="js/state.js"></script>
 <script src="js/favicon.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/generator.js"></script>
 <script src="js/images.js"></script>
-<script src="js/history.js"></script>
 <script src="js/firebase.js"></script>
 <script src="js/screenshots.js"></script>
-<script src="js/feed.js"></script>
-<script src="js/scrubber.js"></script>
+<script src="js/world.js"></script>
+<script src="js/entries.js"></script>
+<script src="js/suggestions.js"></script>
+<script src="js/connections.js"></script>
 <script src="js/navigation.js"></script>
 <script>
 // ── Init ──

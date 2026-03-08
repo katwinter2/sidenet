@@ -8,14 +8,6 @@ settingsBtn.addEventListener('click', () => {
   temperatureValue.textContent = state.temperature.toFixed(2);
   populatePromptPresetSelect();
   fetchBalance();
-  const modDisplay = $('#tonalModifierDisplay');
-  const modValue = $('#tonalModifierValue');
-  if (state.tonalModifier) {
-    modValue.textContent = state.tonalModifier;
-    modDisplay.style.display = '';
-  } else {
-    modDisplay.style.display = 'none';
-  }
 });
 
 cancelSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
@@ -30,7 +22,7 @@ settingsModal.addEventListener('click', (e) => {
 
 saveSettingsBtn.addEventListener('click', () => {
   state.apiKey = apiKeyInput.value.trim();
-  state.imagesPerPage = Math.min(3, Math.max(1, parseInt(imagesPerPageInput.value) || 2));
+  state.imagesPerPage = Math.min(CONFIG.images.maxPerPage, Math.max(CONFIG.images.minPerPage, parseInt(imagesPerPageInput.value) || CONFIG.images.defaultPerPage));
   state.displayName = displayNameInput.value.trim();
   state.temperature = parseFloat(temperatureSlider.value);
   state.activePromptId = promptPresetSelect.value;
@@ -53,12 +45,7 @@ function updateStatusBar() {
   }
 }
 
-const POLLEN_PER_RESPONSE = {
-  'nova-fast': 22200, 'mistral': 4300, 'gemini-fast': 3100,
-  'qwen-coder': 1200, 'openai-fast': 950, 'openai': 700,
-  'grok': 550, 'claude-fast': 95, 'openai-large': 90,
-  'gemini': 85, 'claude': 25,
-};
+const POLLEN_PER_RESPONSE = CONFIG.pollenPerResponse;
 
 async function fetchBalance() {
   const el = document.getElementById('balanceDisplay');
@@ -66,7 +53,7 @@ async function fetchBalance() {
   if (!el || !amt) return;
   if (!state.apiKey) { el.style.display = 'none'; return; }
   try {
-    const resp = await fetch('https://gen.pollinations.ai/account/balance', {
+    const resp = await fetch(CONFIG.api.balanceCheck, {
       headers: { 'Authorization': `Bearer ${state.apiKey}` }
     });
     if (!resp.ok) throw new Error('Failed');

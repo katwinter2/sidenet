@@ -22,14 +22,14 @@ async function generateImages(prompts) {
     try {
       const encodedPrompt = encodeURIComponent(prompt);
       const params = new URLSearchParams({
-        model: 'flux',
-        width: '768',
-        height: '512',
-        nologo: 'true',
+        model: CONFIG.images.model,
+        width: String(CONFIG.images.width),
+        height: String(CONFIG.images.height),
+        nologo: String(CONFIG.images.nologo),
       });
       if (state.apiKey) params.set('key', state.apiKey);
 
-      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?${params}`;
+      const url = `${CONFIG.api.imageGeneration}/${encodedPrompt}?${params}`;
 
       // Create image element and wait for load
       const placeholder = document.getElementById(id);
@@ -44,12 +44,12 @@ async function generateImages(prompts) {
         img.onload = resolve;
         img.onerror = () => {
           // Fallback: try gen.pollinations.ai endpoint
-          const fallbackUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?${params}`;
+          const fallbackUrl = `${CONFIG.api.imageFallback}/${encodedPrompt}?${params}`;
           img.onerror = reject;
           img.src = fallbackUrl;
         };
         // timeout after 60s
-        setTimeout(resolve, 60000);
+        setTimeout(resolve, CONFIG.images.loadTimeout);
       });
 
       placeholder.replaceWith(img);
@@ -71,9 +71,9 @@ function resolveImagesForIframe(html, imagePrompts) {
   let result = html;
   for (const { id, prompt } of limited) {
     const enc = encodeURIComponent(prompt);
-    const params = new URLSearchParams({ model: 'flux', width: '768', height: '512', nologo: 'true' });
+    const params = new URLSearchParams({ model: CONFIG.images.model, width: String(CONFIG.images.width), height: String(CONFIG.images.height), nologo: String(CONFIG.images.nologo) });
     if (state.apiKey) params.set('key', state.apiKey);
-    const url = `https://image.pollinations.ai/prompt/${enc}?${params}`;
+    const url = `${CONFIG.api.imageGeneration}/${enc}?${params}`;
     result = result.replace(
       new RegExp(`<div class="image-placeholder" id="${id}">[^<]*</div>`),
       `<img class="page-image" alt="${escapeHtml(prompt)}" src="${url}" />`
@@ -82,21 +82,9 @@ function resolveImagesForIframe(html, imagePrompts) {
   return result;
 }
 
-// ── Link binding ──
+// ── Link binding (delegates to entries.js) ──
 function bindPageLinks() {
-  if (pageContainer.querySelector('iframe')) return;
-  const parentHtml = pageContainer.innerHTML;
-  pageContainer.querySelectorAll('a[href]').forEach((link) => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      let href = link.getAttribute('href');
-      // Strip sidenet:// or legacy side:// prefix
-      href = href.replace(/^(sidenet|side):\/\//, '');
-      navigateTo(href, {
-        parentFeedKey: state.currentFeedKey,
-        explorationId: state.currentExplorationId,
-        parentHtml,
-      });
-    });
-  });
+  if (typeof bindEntryLinks === 'function') {
+    bindEntryLinks();
+  }
 }

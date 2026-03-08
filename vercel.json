@@ -2,6 +2,7 @@
   "buildCommand": "bash build.sh",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/w/(.*)", "destination": "/index.html" },
     { "source": "/s/(.*)", "destination": "/index.html" }
   ]
 }
