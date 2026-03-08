@@ -74,51 +74,86 @@ ${context ? context + '\n' : ''}Generate a structured entry with connections to 
   return content;
 }
 
+// Extract a balanced JSON object starting from a given index using bracket counting
+function extractJsonObject(str, startIdx) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let start = -1;
+  for (let i = startIdx; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return str.substring(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
 function parseWorldResponse(raw) {
   raw = raw.replace(/^```\w*\s*\n?/i, '').replace(/\n?```\s*$/i, '');
 
-  // Extract ===ENTRY=== section
+  // ── Extract ENTRY JSON ──
   let entryData = null;
-  const entryMatch = raw.match(/===ENTRY===\s*([\s\S]*?)(?=={3}\w+={3})/);
+
+  // Strategy 1: ===ENTRY=== section delimiter
+  const entryMatch = raw.match(/===ENTRY===\s*/);
   if (entryMatch) {
-    const jsonStr = entryMatch[1].trim();
-    try {
-      entryData = JSON.parse(jsonStr);
-    } catch {
-      const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
-      if (jsonObjMatch) {
-        try { entryData = JSON.parse(jsonObjMatch[0]); } catch {}
+    const afterEntry = entryMatch.index + entryMatch[0].length;
+    const jsonStr = extractJsonObject(raw, afterEntry);
+    if (jsonStr) {
+      try { entryData = JSON.parse(jsonStr); } catch {}
+    }
+  }
+
+  // Strategy 2: Find any JSON with "name" field using bracket counting
+  if (!entryData) {
+    const nameIdx = raw.search(/"name"\s*:/);
+    if (nameIdx !== -1) {
+      // Walk backwards to find the opening brace
+      let braceIdx = raw.lastIndexOf('{', nameIdx);
+      if (braceIdx !== -1) {
+        const jsonStr = extractJsonObject(raw, braceIdx);
+        if (jsonStr) {
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.name) entryData = parsed;
+          } catch {}
+        }
       }
     }
   }
 
-  // Fallback: try to find ANY JSON block with "name" and "type" fields in the raw response
-  if (!entryData) {
-    const jsonBlocks = raw.match(/\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*"type"\s*:\s*"[^"]+?"[^{}]*\}/g)
-      || raw.match(/\{[^{}]*"type"\s*:\s*"[^"]+?"[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*\}/g);
-    if (jsonBlocks) {
-      for (const block of jsonBlocks) {
-        try { entryData = JSON.parse(block); break; } catch {}
-      }
-    }
-  }
+  // ── Parse HTML/CSS/JS ──
+  const { html: rawHtml, css, js } = parseStructuredResponse(raw);
 
-  // Fallback: try to find a larger JSON object anywhere
-  if (!entryData) {
-    const bigJson = raw.match(/\{[\s\S]*?"name"\s*:[\s\S]*?"suggestions"\s*:[\s\S]*?\}/);
-    if (bigJson) {
-      try { entryData = JSON.parse(bigJson[0]); } catch {}
-    }
-  }
+  // ── Clean HTML: strip document wrappers that break DOM rendering ──
+  let html = rawHtml;
+  // Remove <!DOCTYPE>, <html>, <head>, <body> and their closing tags
+  html = html.replace(/<!DOCTYPE[^>]*>/gi, '');
+  html = html.replace(/<\/?(html|head|body|meta)[^>]*>/gi, '');
+  // Extract any <title> content for fallback name
+  const titleTagMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
+  html = html.replace(/<title[^>]*>.*?<\/title>/gi, '');
+  // Strip any <link> tags (we don't need external stylesheets in generated pages)
+  html = html.replace(/<link[^>]*>/gi, '');
+  html = html.trim();
 
-  // Parse HTML/CSS/JS using existing parser
-  const { html, css, js } = parseStructuredResponse(raw);
-
-  // Provide defaults if ENTRY section was missing or invalid
+  // ── Provide defaults if ENTRY section was missing or invalid ──
   if (!entryData) {
-    const titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    const name = h1Match
+      ? h1Match[1].replace(/<[^>]*>/g, '').trim()
+      : (titleTagMatch ? titleTagMatch[1].trim() : 'Untitled Entry');
     entryData = {
-      name: titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').trim() : 'Untitled Entry',
+      name,
       type: 'lore',
       summary: '',
       connections: [],
@@ -127,7 +162,7 @@ function parseWorldResponse(raw) {
     };
   }
 
-  // Normalize entry data
+  // ── Normalize ──
   entryData.name = entryData.name || 'Untitled Entry';
   entryData.type = CONFIG.world.entryTypes.includes(entryData.type) ? entryData.type : 'lore';
   entryData.summary = (entryData.summary || '').substring(0, CONFIG.world.summaryMaxLength);
@@ -135,13 +170,12 @@ function parseWorldResponse(raw) {
   entryData.tags = Array.isArray(entryData.tags) ? entryData.tags : [];
   entryData.suggestions = Array.isArray(entryData.suggestions) ? entryData.suggestions : [];
 
-  // If still no suggestions, try to extract entry:// links from HTML as suggestions
+  // ── Fallback suggestions from entry:// links in HTML ──
   if (entryData.suggestions.length === 0 && html) {
     const linkMatches = html.matchAll(/href="entry:\/\/([^"]+)"/gi);
     const linkSuggestions = [];
     for (const m of linkMatches) {
       const name = decodeURIComponent(m[1]);
-      // Only suggest entries that don't already exist
       if (!state.worldEntries.find(e => e.name.toLowerCase() === name.toLowerCase())) {
         linkSuggestions.push(name);
       }
