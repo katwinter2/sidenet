@@ -301,5 +301,15 @@ document.getElementById('worldSelectModal').addEventListener('click', (e) => {
 
 document.getElementById('newWorldFromSelect').addEventListener('click', () => {
   document.getElementById('worldSelectModal').classList.remove('open');
-  showWorldCreateModal();
+  // Clear current world and go to homepage
+  state.currentWorldId = null;
+  state.currentWorldName = '';
+  state.currentWorldData = null;
+  state.currentEntryId = null;
+  state.worldEntries = [];
+  localStorage.removeItem('sidenet_currentWorldId');
+  localStorage.removeItem('sidenet_currentWorldName');
+  worldNameBtn.textContent = 'No World';
+  showWelcomeScreen();
+  history.pushState(null, '', '/');
 });

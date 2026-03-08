@@ -85,11 +85,29 @@ function parseWorldResponse(raw) {
     try {
       entryData = JSON.parse(jsonStr);
     } catch {
-      // Try to find a JSON object within the text
       const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonObjMatch) {
         try { entryData = JSON.parse(jsonObjMatch[0]); } catch {}
       }
+    }
+  }
+
+  // Fallback: try to find ANY JSON block with "name" and "type" fields in the raw response
+  if (!entryData) {
+    const jsonBlocks = raw.match(/\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*"type"\s*:\s*"[^"]+?"[^{}]*\}/g)
+      || raw.match(/\{[^{}]*"type"\s*:\s*"[^"]+?"[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*\}/g);
+    if (jsonBlocks) {
+      for (const block of jsonBlocks) {
+        try { entryData = JSON.parse(block); break; } catch {}
+      }
+    }
+  }
+
+  // Fallback: try to find a larger JSON object anywhere
+  if (!entryData) {
+    const bigJson = raw.match(/\{[\s\S]*?"name"\s*:[\s\S]*?"suggestions"\s*:[\s\S]*?\}/);
+    if (bigJson) {
+      try { entryData = JSON.parse(bigJson[0]); } catch {}
     }
   }
 
@@ -116,6 +134,22 @@ function parseWorldResponse(raw) {
   entryData.connections = Array.isArray(entryData.connections) ? entryData.connections : [];
   entryData.tags = Array.isArray(entryData.tags) ? entryData.tags : [];
   entryData.suggestions = Array.isArray(entryData.suggestions) ? entryData.suggestions : [];
+
+  // If still no suggestions, try to extract entry:// links from HTML as suggestions
+  if (entryData.suggestions.length === 0 && html) {
+    const linkMatches = html.matchAll(/href="entry:\/\/([^"]+)"/gi);
+    const linkSuggestions = [];
+    for (const m of linkMatches) {
+      const name = decodeURIComponent(m[1]);
+      // Only suggest entries that don't already exist
+      if (!state.worldEntries.find(e => e.name.toLowerCase() === name.toLowerCase())) {
+        linkSuggestions.push(name);
+      }
+    }
+    if (linkSuggestions.length > 0) {
+      entryData.suggestions = linkSuggestions.slice(0, 4);
+    }
+  }
 
   return { entry: entryData, html, css, js };
 }
@@ -422,3 +456,61 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 entrySearch.addEventListener('input', () => {
   renderEntryList(undefined, entrySearch.value);
 });
+
+// ── Highlight-to-create ──
+// When user selects text on a generated page, show a floating button to create an entry from it
+(function initHighlightToCreate() {
+  const popup = document.createElement('div');
+  popup.className = 'highlight-create-popup';
+  popup.innerHTML = '<button class="highlight-create-btn">Create from this</button>';
+  popup.style.display = 'none';
+  document.body.appendChild(popup);
+
+  const btn = popup.querySelector('.highlight-create-btn');
+
+  function hidePopup() {
+    popup.style.display = 'none';
+  }
+
+  document.addEventListener('mouseup', (e) => {
+    // Only trigger inside content area (generated pages)
+    const contentArea = document.getElementById('contentArea');
+    if (!contentArea || !contentArea.contains(e.target)) { hidePopup(); return; }
+    // Don't trigger on buttons/inputs
+    if (e.target.closest('button, input, textarea, .back-to-overview')) { hidePopup(); return; }
+
+    setTimeout(() => {
+      const sel = window.getSelection();
+      const text = sel ? sel.toString().trim() : '';
+      if (text.length < 3 || text.length > 500) { hidePopup(); return; }
+
+      // Position popup near the selection
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      popup.style.display = 'block';
+      popup.style.left = Math.min(rect.left + rect.width / 2, window.innerWidth - 160) + 'px';
+      popup.style.top = (rect.top + window.scrollY - 40) + 'px';
+    }, 10);
+  });
+
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent selection from clearing
+  });
+
+  btn.addEventListener('click', () => {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : '';
+    hidePopup();
+    if (text && text.length >= 3) {
+      addressInput.value = text;
+      createEntry(text);
+      sel.removeAllRanges();
+    }
+  });
+
+  // Hide popup when clicking elsewhere or scrolling
+  document.addEventListener('mousedown', (e) => {
+    if (!popup.contains(e.target)) hidePopup();
+  });
+  document.getElementById('contentArea')?.addEventListener('scroll', hidePopup);
+})();
